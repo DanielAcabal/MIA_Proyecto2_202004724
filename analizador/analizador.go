@@ -1,18 +1,20 @@
 package analizador
 
 import (
-	"fmt"
+	"MIA-Proyecto2_202004724/comando"
 	"bufio"
 	"os"
+	"regexp"
 	"strings"
-	"MIA-Proyecto2_202004724/comando"	
+	"fmt"
 )
 
-func Analizar() {
+func Analizar(consola *string) {
 	finalizar := false
-	fmt.Println("=====MIA-Proyecto2_202004724=====")
+	*consola += "=====MIA-Proyecto2_202004724=====\n"
 	reader := bufio.NewReader(os.Stdin)// Buffer de entrada
 	for !finalizar { 
+		*consola = ""
 		fmt.Print("MIA-Proyecto2:$ ")
 		comando, _ := reader.ReadString('\n')// Obtenemos la entrada hasta encontrar ,\n
 											 // Se puede usar fmt.Scann pero solo obtiene una palabra
@@ -21,12 +23,14 @@ func Analizar() {
 		} else {
 			if comando != "" && comando != "exit\n" {
 				//  Separacion de comando y parametros
-				split_comand(comando)
+				split_comand(comando,consola)
 			}
 		}
+
+		fmt.Print(*consola)
 	}
 }
-func split_comand(command string) {
+func split_comand(command string,consola *string) {
 	var commandArray []string
 	// Clean command
 	command = strings.Replace(command, "\n", "", 1) //reemplazamos una vez, n<0 para todos
@@ -35,14 +39,20 @@ func split_comand(command string) {
 	if strings.Contains(command, "mostrar") { // Commands without paramaters
 		commandArray = append(commandArray, command)
 	} else {
-		commandArray = strings.Split(command, " ") //[id,param1,param2,param3]
+		r :=regexp.MustCompile("[ 	]*-")
+		commandArray = r.Split(command,15)
+		//commandArray = strings.Split(command, " -") //[id,param1,param2,param3]
 	}
-	execComand(commandArray)
+	execComand(commandArray,consola)
 }
-func execComand(command []string){
+func execComand(command []string,consola *string){
 	switch command[0] {
 	case "exec":
 	case "mkdisk":
-		comando.Mkdisk(command)
+		*consola += comando.Mkdisk(command)
+	case "rmdisk":
+		*consola += comando.Rmdisk(command)
+	case "fdisk":
+		*consola += comando.Fdisk(command)
 	}
 }
