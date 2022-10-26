@@ -23,27 +23,33 @@ func Analizar(consola *string) {
 		} else {
 			if comando != "" && comando != "exit\n" {
 				//  Separacion de comando y parametros
-				split_comand(comando,consola)
+				Split_comand(comando,consola)
 			}
 		}
 
 		fmt.Print(*consola)
 	}
 }
-func split_comand(command string,consola *string) {
+func Split_comand(entrada string,consola *string) {
 	var commandArray []string
-	// Clean command
-	command = strings.Replace(command, "\n", "", 1) //reemplazamos una vez, n<0 para todos
-	command = strings.Replace(command, "\r", "", 1)
-	// Save id and params
-	if strings.Contains(command, "mostrar") { // Commands without paramaters
-		commandArray = append(commandArray, command)
-	} else {
-		r :=regexp.MustCompile("[ 	]*-")
-		commandArray = r.Split(command,15)
-		//commandArray = strings.Split(command, " -") //[id,param1,param2,param3]
+
+	command1 := strings.Split(entrada,"\n") //For multi commands
+
+	for i := 0; i < len(command1); i++ {
+		comando := command1[i]
+		if strings.Contains(comando, "mostrar") { // Command without paramaters
+			commandArray = append(commandArray, comando)
+		} else if strings.Contains(comando,"#") {
+			*consola += comando + "\n"
+			continue
+		}else{
+			r :=regexp.MustCompile("[ 	]*-")
+			commandArray = r.Split(comando,15) //[id,param1,param2,param3]
+		}
+		execComand(commandArray,consola)
+		*consola += "\n"
 	}
-	execComand(commandArray,consola)
+	
 }
 func execComand(command []string,consola *string){
 	switch command[0] {

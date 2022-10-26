@@ -2,8 +2,8 @@ package comando
 
 import (
 	"MIA-Proyecto2_202004724/Estructuras"
+	"MIA-Proyecto2_202004724/helpers"
 	"bytes"
-	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -54,14 +54,14 @@ func Mkdisk(commandArray []string) string{
 		}else if strings.Contains(data,"fit="){
 			ajuste = strings.Replace(data,"fit=","",1)
 			ajuste = strings.Replace(ajuste, "\"", "", 2)
-			if ajuste!="bf" && ajuste!="ff" && ajuste!="wf"{
+			if ajuste!="bf" && ajuste!="ff" && ajuste!="wf" && ajuste!="bestfit" && ajuste!="firstfit" && ajuste!="worstfit"{
 				seguir = false
 				consola +="Ajuste no válido\n"
 			}
 		}else if strings.Contains(data,"path="){
 			ruta = strings.Replace(data,"path=","",1)
 			ruta = strings.Replace(ruta, "\"", "", 2)
-			reg := regexp.MustCompile("/[a-zA-Z0-9]+.dk")
+			reg := regexp.MustCompile("/[a-zA-Z0-9 ]+.dk")
 			junto := reg.ReplaceAllString(ruta,"")
 			//seguir = false
 			junto = "/home"+junto+""
@@ -107,7 +107,7 @@ func Mkdisk(commandArray []string) string{
 		limite++
 	}
 	mbr := estructuras.MBR{}
-	copy(mbr.Mbr_tamano[:],strconv.Itoa(tamano))
+	copy(mbr.Mbr_tamano[:],strconv.Itoa(tamano_archivo*1024))
 	tiempo := time.Now()
 	s1 := rand.NewSource(tiempo.UnixNano())
     r1 := rand.New(s1)
@@ -192,7 +192,7 @@ func Fdisk(commandArray []string) string {
     ruta :=""
 	unidad := 'K'
 	eliminar := false
-	//nuevoEspacio := 0
+	nuevoEspacio := 1
     primero := ""
 	cant := 0
 	for i := 1; i < len(commandArray); i++ {
@@ -236,8 +236,25 @@ func Fdisk(commandArray []string) string {
 			name := strings.Replace(data,"name=","",1)
 			nombreParticion = name
 			cant++
-		}else{
-			consola += "Parámetro no válido"
+		}else if strings.Contains(data,"add="){
+			tam := strings.Replace(data,"add=","",1)
+			if strings.Contains(tam,"~"){
+				nuevoEspacio = -1
+				tam = strings.Replace(tam,"~","",1)
+			}
+			x,err := strconv.Atoi(tam)
+			if err!=nil{
+				msg_error(err)
+			}
+			nuevoEspacio *= x
+            if (nuevoEspacio==0){consola+="No se puede añadir 0 espacio\n";cant--;
+			}else {if (primero==""){primero="Add";}}
+		}else if strings.Contains(data,"delete="){
+			dato := strings.Replace(data,"delete=","",1)
+			if (dato == "Full" || dato == "full"){eliminar = true;
+			}else {consola += "Opción de eliminación de partición incorrecta\n";cant--;}
+		} else{
+			consola += "Parámetro no válido\n"
 		}
 	}	
 	if (cant==2){
@@ -248,23 +265,23 @@ func Fdisk(commandArray []string) string {
         nombreParticion = strings.Replace(nombreParticion,"\"","",2);
         copy(nuevo.Part_name[:],nombreParticion);
         if (eliminar){
-            fmt.Print("Eliminando particion: ",nombreParticion)
-           // eliminarParticion(path,nombreParticion);
+            consola += "Eliminando particion: "+nombreParticion+"\n"
+            eliminarParticion(ruta,nombreParticion,&consola);
         }else{
             if(primero=="Size"){
             consola += "Creando particion: "+nombreParticion
-            crearParticion(nuevo,ruta,tamanio,unidad,0);
+            crearParticion(nuevo,ruta,tamanio,unidad,0,&consola);
             }else{
-            fmt.Print("Cambio de tamaño a particion: ",nombreParticion);
-            //addParticion(path.c_str(),nuevoEspacio,unidad,nombreParticion);
+            consola += "Cambio de tamaño a particion: "+nombreParticion+"\n"
+            addParticion(ruta,nuevoEspacio,unidad,nombreParticion,&consola);
             }
         }
     }else{
-        consola += "Error de creacion/eliminacion de partición, faltan parámetros"
+        consola += "Error de creacion/eliminacion de partición, faltan parámetros\n"
     }
 	return consola
 }
-func crearParticion(particion estructuras.Particion,path string, size int, unit rune,add int){
+func crearParticion(particion estructuras.Particion,path string, size int, unit rune,add int,consola *string){
     //fdisk -size=1000  -unit=B -path=/home/user/Disco4.dk -name=Particion4
     //fdisk -add=8 -s=10 -unit=K -path=/home/user/Disco3.dk -name=Particion3
     //fdisk -delete=full -name=Particion4 -path=/home/user/Disco3.dk
@@ -300,41 +317,44 @@ func crearParticion(particion estructuras.Particion,path string, size int, unit 
     }   
     }
     //Verificar el nombre de la particion, si existe
-    if (!crear) {fmt.Print("La partición ",particion.Part_name," ya existe");
+    if (!crear) {*consola+="La partición "+string(particion.Part_name[:])+" ya existe";
 	}else{
     if ((primarias+extendidas)<4){ // Para otra primaria o una extendida
-        if bytes.Equal(mbr.Dsk_fit[:],[]byte{'F'}){
+        c :=0
+		if bytes.Equal(mbr.Dsk_fit[:],[]byte{'F'}){
 			bs:=calcularTamanio(size,unit)
             copy(particion.Part_size[:],strconv.Itoa(bs));
-            c := primerAjuste(&mbr,&particion); // 0 == inicio disco
+            c = primerAjuste(&mbr,&particion,consola); // 0 == inicio disco
+		}else if bytes.Equal(mbr.Dsk_fit[:],[]byte{'B'}){
+			bs:=calcularTamanio(size,unit)
+            copy(particion.Part_size[:],strconv.Itoa(bs));
+            c = mejorAjuste(&mbr,&particion,consola); // 0 == inicio disco
+		}else if bytes.Equal(mbr.Dsk_fit[:],[]byte{'W'}){
+			bs:=calcularTamanio(size,unit)
+            copy(particion.Part_size[:],strconv.Itoa(bs));
+            c = PeorAjuste(&mbr,&particion,consola); // 0 == inicio disco
+		}
             if (c!=0){
-				b := make([]byte,2)
-				binary.LittleEndian.PutUint16(b,c)
-				copy(particion.Part_start[:],b);
+				copy(particion.Part_start[:],strconv.Itoa(c));
 			}else{crear=false;}
-			b := make([]byte,2)
-			binary.LittleEndian.PutUint16(b,0)
-			if bytes.Equal(aux[0].Part_start[:],b){
+
+			if helpers.ByteArrayToInt(aux[0].Part_start[:])==0{
                 mbr.Mbr_partition_1 = particion;
-            }else if bytes.Equal(aux[1].Part_start[:],b){
+            }else if helpers.ByteArrayToInt(aux[1].Part_start[:])==0{
                 mbr.Mbr_partition_2 = particion;
-            }else if bytes.Equal(aux[2].Part_start[:],b){
+            }else if helpers.ByteArrayToInt(aux[2].Part_start[:])==0{
                 mbr.Mbr_partition_3 = particion;
-            }else if bytes.Equal(aux[3].Part_start[:],b){
+            }else if helpers.ByteArrayToInt(aux[3].Part_start[:])==0{
                 mbr.Mbr_partition_4 = particion;
             }  
-    }
+    
 	}else{
-        fmt.Print("Máximo de particiones creadas");
+        *consola += "Máximo de particiones creadas";
         crear = false;
     }
     
     if (crear){
 		data = Struct_to_bytes(mbr)
-		/*puntero,er := disco.Seek(int64(0),io.SeekStart)
-		if er != nil {
-			msg_error(err)
-		}*/
 		_,err =disco.WriteAt(data,0)
 		if err != nil{
 			msg_error(err)
@@ -356,8 +376,9 @@ func calcularTamanio(s int,u rune) int{
     }
     return tamanio_real;
 }
-func primerAjuste(mbr *estructuras.MBR, particion *estructuras.Particion) uint16{
-    comienza := uint16(unsafe.Sizeof(mbr));
+func primerAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola *string) int{
+    var info estructuras.MBR
+	comienza := int(unsafe.Sizeof(info));
     aux := [4]estructuras.Particion{};
     aux[0] = mbr.Mbr_partition_1;
     aux[1] = mbr.Mbr_partition_2;
@@ -367,29 +388,35 @@ func primerAjuste(mbr *estructuras.MBR, particion *estructuras.Particion) uint16
     i, j:=0,0;
     for i = 0; i < n - 1; i++{
         for j = 0; j < n - i - 1; j++{
-            if (binary.BigEndian.Uint16(aux[j].Part_start[:]) > binary.BigEndian.Uint16(aux[j + 1].Part_start[:])){
+			actual := helpers.ByteArrayToInt(aux[j].Part_start[:])
+			siguiente := helpers.ByteArrayToInt(aux[j+1].Part_start[:])
+            if (actual > siguiente){
                 aux[j], aux[j + 1] = aux[j + 1] , aux[j] 
 			}
 		}
 	}
-    for i := 0; i < n; i++ {
-        espacio := binary.BigEndian.Uint16(aux[i].Part_start[:]) - comienza; //int
-        if (espacio>=binary.BigEndian.Uint16(particion.Part_size[:])){
-			b := make([]byte, 2)
-			binary.LittleEndian.PutUint16(b, uint16(i))
-            copy(particion.Part_start[:],b);
+    for i = 0; i < n; i++ {
+		actual := helpers.ByteArrayToInt(aux[i].Part_start[:])
+        espacio := actual - comienza; //int
+		necesito := helpers.ByteArrayToInt(particion.Part_size[:])
+        if (espacio>=necesito){
+			copy(particion.Part_start[:],strconv.Itoa(comienza))
             return comienza;
         }
-        if(comienza<=binary.BigEndian.Uint16(aux[i].Part_start[:])){
-            comienza = binary.BigEndian.Uint16(aux[i].Part_size[:]) + binary.BigEndian.Uint16(aux[i].Part_start[:]);
+
+        if(espacio>=0){
+			nuevo := helpers.ByteArrayToInt(aux[i].Part_size[:])
+			actual := helpers.ByteArrayToInt(aux[i].Part_start[:])
+            comienza = actual+ nuevo;
         }
     }
-    if (comienza==0){comienza = uint16(unsafe.Sizeof(mbr));}
-    x:= binary.BigEndian.Uint16(mbr.Mbr_tamano[:]); //int
-    if ((x-comienza)>=binary.BigEndian.Uint16(particion.Part_size[:])){
+    if (comienza==0){comienza = int(unsafe.Sizeof(info));}
+    x := helpers.ByteArrayToInt(mbr.Mbr_tamano[:]); //int
+	nuevo := helpers.ByteArrayToInt(particion.Part_size[:])
+    if ((x-comienza)>=nuevo){
         return comienza;
     }else{
-        fmt.Print("No hay espacio para esta particion: ",particion.Part_name);
+        *consola += "No hay espacio para esta particion: "+string(particion.Part_name[:]);
     }
     return 0;
 }
@@ -403,4 +430,235 @@ func BytesToStructMBR(s []byte) estructuras.MBR {
 		msg_error(err)
 	}
 	return p
+}
+
+func mejorAjuste(mbr *estructuras.MBR,particion *estructuras.Particion,consola *string) int{
+    
+    aux := [4]estructuras.Particion{};
+    aux[0] = mbr.Mbr_partition_1;
+    aux[1] = mbr.Mbr_partition_2;
+    aux[2] = mbr.Mbr_partition_3;
+    aux[3] = mbr.Mbr_partition_4;
+    pares := [5]estructuras.Pares{};
+    n:= 4;
+    i, j :=0,0
+    for i = 0; i < n - 1; i++{
+        for j = 0; j < n - i - 1; j++{
+            if (helpers.ByteArrayToInt(aux[j].Part_start[:]) > helpers.ByteArrayToInt(aux[j + 1].Part_start[:])){
+                aux[j], aux[j + 1] = aux[j + 1] ,aux[j] 
+			}
+		}
+	}
+	var info estructuras.MBR
+	comienza := int(unsafe.Sizeof(info));
+    for i = 0; i < n; i++{
+        espacio := helpers.ByteArrayToInt(aux[i].Part_start[:]) - comienza;
+        pares[i].Inicio = comienza;
+        pares[i].Tamanio = espacio;
+        if (espacio>=0){
+        comienza = helpers.ByteArrayToInt(aux[i].Part_start[:])+helpers.ByteArrayToInt(aux[i].Part_size[:]);
+        }
+    }
+    if (comienza==0){comienza = int(unsafe.Sizeof(info));}
+    espacio := helpers.ByteArrayToInt(mbr.Mbr_tamano[:]) - comienza;
+    pares[4].Inicio = comienza;
+    pares[4].Tamanio = espacio;
+    for i = 0; i < 5 - 1; i++{
+        for j = 0; j < 5 - i - 1; j++{
+            if (pares[j].Tamanio > pares[j + 1].Tamanio){
+                pares[j], pares[j + 1] = pares[j+1], pares[j] 
+			}
+		}
+	}
+    for i = 0; i < 5; i++{
+        x :=pares[i].Tamanio;
+    	a := helpers.ByteArrayToInt(particion.Part_size[:]);
+        if(x>a){
+            return pares[i].Inicio;
+        }
+    }
+        *consola += "No hay espacio para esta particion: "+string(particion.Part_name[:]);
+    return 0;
+}
+
+func PeorAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola *string)int{
+    
+	aux := [4]estructuras.Particion{};
+    aux[0] = mbr.Mbr_partition_1;
+    aux[1] = mbr.Mbr_partition_2;
+    aux[2] = mbr.Mbr_partition_3;
+    aux[3] = mbr.Mbr_partition_4;
+
+    n := 4;
+    i, j := 0,0;
+    for i = 0; i < n - 1; i++{
+        for j = 0; j < n - i - 1; j++{
+            if helpers.ByteArrayToInt(aux[j].Part_start[:]) > helpers.ByteArrayToInt(aux[j + 1].Part_start[:]){
+                aux[j], aux[j + 1] = aux[j+1], aux[j]
+			}
+		}
+	}
+	var info estructuras.MBR
+    tamanio := 0; comienza := int(unsafe.Sizeof(info)); start := comienza;
+    for i = 0; i < n; i++{
+        espacio := helpers.ByteArrayToInt(aux[i].Part_start[:]) - comienza;
+        if (espacio>tamanio){
+            tamanio = espacio;
+            start = comienza;
+
+        }
+        if(espacio>=0){
+        comienza = helpers.ByteArrayToInt(aux[i].Part_start[:])+helpers.ByteArrayToInt(aux[i].Part_size[:]);
+        }
+    }
+    if (comienza==0){comienza = int(unsafe.Sizeof(info));}
+
+    x := helpers.ByteArrayToInt(mbr.Mbr_tamano[:]); 
+    espacio := x - comienza;
+    if (espacio>tamanio){
+        tamanio = espacio;
+        start = comienza;
+    }
+    if (tamanio>=helpers.ByteArrayToInt(particion.Part_size[:])){
+        return start;
+    }else{
+        *consola += "No hay espacio para esta particion: "+string(particion.Part_name[:]);
+    }
+    return 0;    
+}
+func addParticion(path string, size int,unit rune,nombre string,consola *string){
+    tamanioBytes := calcularTamanio(size,unit);//Ha sumar o restar
+    disco, err := os.OpenFile(path,os.O_RDWR,0660);
+	if err != nil{
+		msg_error(err)
+		return
+	}
+    mbrEmpty := estructuras.MBR{};
+	si := Struct_to_bytes(mbrEmpty)
+	data := make([]byte,len(si))
+	_, err = disco.ReadAt(data,int64(0))
+	if err != nil && err != io.EOF {
+		msg_error(err)
+	}
+	mbr := BytesToStructMBR(data)
+    //Verificar tipo de particiones en mbr
+    aux := [4]*estructuras.Particion{};
+    aux[0] = &mbr.Mbr_partition_1;
+    aux[1] = &mbr.Mbr_partition_2;
+    aux[2] = &mbr.Mbr_partition_3;
+    aux[3] = &mbr.Mbr_partition_4;
+    
+    n := 4;
+    i, j := 0,0;
+    for i = 0; i < n - 1; i++{ //Se ordena
+        for j = 0; j < n - i - 1; j++{
+            if (helpers.ByteArrayToInt(aux[j].Part_start[:]) > helpers.ByteArrayToInt(aux[j + 1].Part_start[:])){
+                aux[j], aux[j + 1] = aux[j+1], aux[j]
+			}
+		}
+
+	}
+    encontrado := false;
+    guardar := false;
+    for i = 0; i < n; i++{
+        p:= aux[i].Part_name[:];
+		aux := make([]byte,50)
+		copy(aux,nombre)
+        if bytes.Equal(p[:],aux[:]){
+            encontrado =true;
+            break;
+        }
+    }
+    if (encontrado){
+        res := helpers.ByteArrayToInt(aux[i].Part_size[:]) + tamanioBytes; //Positivo o negativo
+        if(res<=0){
+            *consola += "No quedará espacio en la partición\n";
+        }else{
+            fin := helpers.ByteArrayToInt(mbr.Mbr_tamano[:])
+            if(i+1<4){
+                fin =helpers.ByteArrayToInt(aux[i+1].Part_start[:])
+            }
+            if ((fin-helpers.ByteArrayToInt(aux[i].Part_start[:]))>=res){//Si lo puede guardar
+                vacio := make([]byte,10)
+				copy(aux[i].Part_size[:],vacio);
+				copy(aux[i].Part_size[:],strconv.Itoa(res));
+                guardar = true;
+            }else{
+                *consola += "Espacio insuficiente\n"
+            }
+        }
+    }else{
+        *consola +="La partición no existe\n"
+    }
+    if (guardar){
+	data := Struct_to_bytes(mbr)
+	pos,_:=disco.Seek(0,io.SeekStart)
+	_,err :=disco.WriteAt(data,pos)
+	if err!=nil{
+		msg_error(err)
+	}
+    }
+    disco.Close()
+}
+
+func eliminarParticion(path string, name string,consola *string){
+    //Verificar que la partición exista
+	disco, err := os.OpenFile(path,os.O_RDWR,0660);
+	if err != nil{
+		msg_error(err)
+		return
+	}
+    mbrEmpty := estructuras.MBR{};
+	si := Struct_to_bytes(mbrEmpty)
+	data := make([]byte,len(si))
+	_, err = disco.ReadAt(data,int64(0))
+	if err != nil && err != io.EOF {
+		msg_error(err)
+	}
+	mbr := BytesToStructMBR(data)
+    //Verificar tipo de particiones en mbr
+    aux := [4]estructuras.Particion{};
+    aux[0] = mbr.Mbr_partition_1;
+    aux[1] = mbr.Mbr_partition_2;
+    aux[2] = mbr.Mbr_partition_3;
+    aux[3] = mbr.Mbr_partition_4;
+    encontrado := false;
+	i:=0
+    for  i = 0; i < 4; i++{
+        if helpers.ByteArrayToInt(aux[i].Part_start[:])!=0{
+            if (aux[i].Part_type[0]=='P'){
+                p := string(aux[i].Part_name[:]);
+                if (p == name){
+                    encontrado = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (encontrado){ //FULL
+        nuevo :=estructuras.Particion{};
+        ceros := make([]byte,1)
+        ceros[0] = 0;
+        j:=0;
+		puntero, err :=disco.Seek(int64(helpers.ByteArrayToInt(aux[i].Part_start[:])),io.SeekStart)
+        if err!=nil{
+			msg_error(err)
+		}
+		for (j!=helpers.ByteArrayToInt(aux[i].Part_size[:])){
+			disco.WriteAt(ceros,puntero)
+            j++;
+        }
+        if (i==0){mbr.Mbr_partition_1 = nuevo
+		}else if (i==1){mbr.Mbr_partition_2 = nuevo
+		}else if (i==2){mbr.Mbr_partition_3 = nuevo
+		}else if (i==3){mbr.Mbr_partition_4 = nuevo}
+		puntero,err = disco.Seek(0,io.SeekStart)
+		if err !=nil{
+			msg_error(err)
+		}
+		data := Struct_to_bytes(mbr)
+		disco.WriteAt(data,puntero)
+        //mostrarMBR(disco);       
+    }
+	disco.Close()
 }

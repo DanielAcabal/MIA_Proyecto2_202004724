@@ -1,11 +1,14 @@
 package estructuras
-
+type Pares struct{
+	Inicio int
+	Tamanio int
+}
 type Particion struct{
     //Atributos
     Part_status [1]byte
     Part_type [1]byte
     Part_fit [2]byte
-    Part_start [2]byte
+    Part_start [10]byte
     Part_size [10]byte
     Part_name [50]byte
 }
