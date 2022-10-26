@@ -4,6 +4,7 @@ import (
 	"MIA-Proyecto2_202004724/Estructuras"
 	"MIA-Proyecto2_202004724/helpers"
 	"bytes"
+	"container/list"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -15,7 +16,7 @@ import (
 	"time"
 	"unsafe"
 )
-
+var particionesMontadas = list.New()
 /*======================MKDISK=======================*/
 func Mkdisk(commandArray []string) string{
 	//mkdisk -Size=3000 -unit=K -path=/home/user/Disco4.dk
@@ -626,13 +627,13 @@ func eliminarParticion(path string, name string,consola *string){
 	i:=0
     for  i = 0; i < 4; i++{
         if helpers.ByteArrayToInt(aux[i].Part_start[:])!=0{
-            if (aux[i].Part_type[0]=='P'){
-                p := string(aux[i].Part_name[:]);
-                if (p == name){
-                    encontrado = true;
-                    break;
-                }
-            }
+            p:= aux[i].Part_name[:];
+			aux := make([]byte,50)
+			copy(aux,name)
+        	if bytes.Equal(p[:],aux[:]){
+            encontrado =true;
+            break;
+        }
         }
     }
     if (encontrado){ //FULL
@@ -661,4 +662,110 @@ func eliminarParticion(path string, name string,consola *string){
         //mostrarMBR(disco);       
     }
 	disco.Close()
+}
+func Mount(parametros []string) string{
+	consola := ""
+	ruta := "/home"
+	name := ""
+	cant := 0
+	for i := 1; i < len(parametros); i++ {
+		parametro :=  strings.ToLower(parametros[i])
+		if strings.Contains(parametro,"path="){
+			ruta += strings.Replace(parametro,"path=","",1)
+			cant++
+		}else if strings.Contains(parametro,"name="){	
+			name += strings.Replace(parametro,"name=","",1)
+			cant++
+		}else{
+			consola += "Parámetro "+parametro+" no válido\n"
+			return consola
+		}
+	}
+	if cant==2{
+		consola += montarPart(ruta,name)
+	}else{
+		consola += "Parámetros insuficientes\n"
+		return consola
+	}
+
+	return consola
+}
+func montarPart(ruta string,name string)string{
+	consola :=""
+	disco, err := os.OpenFile(ruta,os.O_RDWR,0660);
+	if err != nil{
+		msg_error(err)
+		return ""
+	}
+    mbrEmpty := estructuras.MBR{};
+	si := Struct_to_bytes(mbrEmpty)
+	data := make([]byte,len(si))
+	_, err = disco.ReadAt(data,int64(0))
+	if err != nil && err != io.EOF {
+		msg_error(err)
+	}
+	mbr := BytesToStructMBR(data)
+    //Verificar tipo de particiones en mbr
+    aux := [4]*estructuras.Particion{};
+    aux[0] = &mbr.Mbr_partition_1;
+    aux[1] = &mbr.Mbr_partition_2;
+    aux[2] = &mbr.Mbr_partition_3;
+    aux[3] = &mbr.Mbr_partition_4;
+    encontrado := false;
+	i:=0
+    for  i = 0; i < 4; i++{
+        if helpers.ByteArrayToInt(aux[i].Part_start[:])!=0{
+			p:= aux[i].Part_name[:];
+			aux := make([]byte,50)
+			copy(aux,name)
+			if bytes.Equal(p[:],aux[:]){
+            encontrado =true;
+            break;
+        }
+        }
+    }	
+	if encontrado{
+		letra := rune(i+65)
+		id:= "24"+strconv.Itoa(i)
+		id += string(letra)
+		partMontada := estructuras.Pmontada{}
+		aux[i].Part_status = [1]byte{'M'}
+		partMontada.Id = id
+		partMontada.Particion = *aux[i]
+		partMontada.Path = ruta
+		tiempo := time.Now()
+		partMontada.TiempoM = tiempo.String()
+		particionesMontadas.PushFront(partMontada)
+		consola += "Partición "+name+" montada, id: "+id
+	}else{
+		consola += "Partición "+name+" no encontrada\n"		
+	}
+	disco.Close()
+	return consola
+}
+func Unmount(parametros []string)string{
+	idBuscar :=""
+	seguir := false
+	for i := 1; i < len(parametros); i++ {
+		parametro := parametros[i]
+		if strings.Contains(parametro,"id="){
+			idBuscar = strings.Replace(parametro,"id=","",1)
+			seguir = true
+		}else{
+			return "Parámetro "+parametro+" no válido\n"
+		}
+	}
+	if seguir{
+		for element := particionesMontadas.Front(); element != nil; element = element.Next() {
+			// do something with element.Value
+			part := estructuras.Pmontada(element.Value.(estructuras.Pmontada))
+			if part.Id == idBuscar{
+				particionesMontadas.Remove(element)
+				return "Partición "+idBuscar+" desmontada\n"				
+			}
+			}
+	}else{
+		return "Faltan parámetros\n"
+	}
+	return ""
 }

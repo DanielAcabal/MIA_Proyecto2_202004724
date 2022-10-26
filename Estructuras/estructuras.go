@@ -22,3 +22,9 @@ type MBR struct{
 	Mbr_partition_3 Particion
 	Mbr_partition_4 Particion
 }
+type Pmontada struct{
+    Id string;
+    Particion Particion;
+    Path string;
+	TiempoM string;
+}

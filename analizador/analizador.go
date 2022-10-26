@@ -60,5 +60,9 @@ func execComand(command []string,consola *string){
 		*consola += comando.Rmdisk(command)
 	case "fdisk":
 		*consola += comando.Fdisk(command)
+	case "mount":
+		*consola += comando.Mount(command)
+	case "unmount":
+		*consola += comando.Unmount(command)
 	}
 }
