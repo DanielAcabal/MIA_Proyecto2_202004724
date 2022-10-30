@@ -8,13 +8,13 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-	"unsafe"
 )
 var particionesMontadas = list.New()
 /*======================MKDISK=======================*/
@@ -22,12 +22,12 @@ func Mkdisk(commandArray []string) string{
 	//mkdisk -Size=3000 -unit=K -path=/home/user/Disco4.dk
 	// mkdisk -size=5 -unit=M -path="/home/mis discos/Disco3.dk"
 	consola :=""
-	tamano := 0
+	tamano := int64(0)
 	dimensional := "MB"
 	ajuste := "FF"
 	cantidad := 0
-	tamano_archivo := 0
-	limite := 0
+	tamano_archivo := int64(0)
+	limite := int64(0)
 	bloque := make([]byte, 1024)
 	seguir := true
 	ruta := ""
@@ -40,7 +40,7 @@ func Mkdisk(commandArray []string) string{
 			strtam = strings.Replace(strtam, "\"", "", 2)
 			strtam = strings.Replace(strtam, "\r", "", 1)
 			tamano2, err := strconv.Atoi(strtam)
-			tamano = tamano2
+			tamano = int64(tamano2)
 			if err != nil {
 				msg_error(err)
 			}
@@ -108,12 +108,12 @@ func Mkdisk(commandArray []string) string{
 		limite++
 	}
 	mbr := estructuras.MBR{}
-	copy(mbr.Mbr_tamano[:],strconv.Itoa(tamano_archivo*1024))
+	copy(mbr.Mbr_tamano[:],helpers.IntToByteArray(tamano_archivo*1024))
 	tiempo := time.Now()
 	s1 := rand.NewSource(tiempo.UnixNano())
     r1 := rand.New(s1)
 	copy(mbr.Mbr_fecha_creacion[:],tiempo.String())
-	copy(mbr.Mbr_dsk_signature[:],strconv.Itoa(r1.Intn(100)))
+	copy(mbr.Mbr_dsk_signature[:],helpers.IntToByteArray(int64(r1.Intn(100))))
 	copy(mbr.Dsk_fit[:],ajuste)
 	res := Struct_to_bytes(mbr)
 	puntero,er := disco.Seek(0,io.SeekStart)
@@ -131,7 +131,7 @@ func Mkdisk(commandArray []string) string{
 	// Resumen de accion realizada
 	consola +="Creacion de Disco:\n"
 	consola +=" Tamaño: "
-	consola += strconv.Itoa(tamano)
+	consola += strconv.Itoa(int(tamano))
 	consola +="\n Dimensional: "
 	consola += dimensional
 	return consola
@@ -321,31 +321,31 @@ func crearParticion(particion estructuras.Particion,path string, size int, unit 
     if (!crear) {*consola+="La partición "+string(particion.Part_name[:])+" ya existe";
 	}else{
     if ((primarias+extendidas)<4){ // Para otra primaria o una extendida
-        c :=0
+        c :=int64(0)
 		if bytes.Equal(mbr.Dsk_fit[:],[]byte{'F'}){
-			bs:=calcularTamanio(size,unit)
-            copy(particion.Part_size[:],strconv.Itoa(bs));
+			bs:=int64(calcularTamanio(size,unit))
+            copy(particion.Part_size[:],helpers.IntToByteArray(bs));
             c = primerAjuste(&mbr,&particion,consola); // 0 == inicio disco
 		}else if bytes.Equal(mbr.Dsk_fit[:],[]byte{'B'}){
-			bs:=calcularTamanio(size,unit)
-            copy(particion.Part_size[:],strconv.Itoa(bs));
+			bs:=int64(calcularTamanio(size,unit))
+            copy(particion.Part_size[:],helpers.IntToByteArray(bs));
             c = mejorAjuste(&mbr,&particion,consola); // 0 == inicio disco
 		}else if bytes.Equal(mbr.Dsk_fit[:],[]byte{'W'}){
-			bs:=calcularTamanio(size,unit)
-            copy(particion.Part_size[:],strconv.Itoa(bs));
+			bs:=int64(calcularTamanio(size,unit))
+            copy(particion.Part_size[:],helpers.IntToByteArray(bs));
             c = PeorAjuste(&mbr,&particion,consola); // 0 == inicio disco
 		}
             if (c!=0){
-				copy(particion.Part_start[:],strconv.Itoa(c));
+				copy(particion.Part_start[:],helpers.IntToByteArray(c));
 			}else{crear=false;}
 
-			if helpers.ByteArrayToInt(aux[0].Part_start[:])==0{
+			if helpers.ByteArrayToInt64(aux[0].Part_start[:])==0{
                 mbr.Mbr_partition_1 = particion;
-            }else if helpers.ByteArrayToInt(aux[1].Part_start[:])==0{
+            }else if helpers.ByteArrayToInt64(aux[1].Part_start[:])==0{
                 mbr.Mbr_partition_2 = particion;
-            }else if helpers.ByteArrayToInt(aux[2].Part_start[:])==0{
+            }else if helpers.ByteArrayToInt64(aux[2].Part_start[:])==0{
                 mbr.Mbr_partition_3 = particion;
-            }else if helpers.ByteArrayToInt(aux[3].Part_start[:])==0{
+            }else if helpers.ByteArrayToInt64(aux[3].Part_start[:])==0{
                 mbr.Mbr_partition_4 = particion;
             }  
     
@@ -377,9 +377,9 @@ func calcularTamanio(s int,u rune) int{
     }
     return tamanio_real;
 }
-func primerAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola *string) int{
+func primerAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola *string) int64{
     var info estructuras.MBR
-	comienza := int(unsafe.Sizeof(info));
+	comienza := helpers.HandleSizeof(info);
     aux := [4]estructuras.Particion{};
     aux[0] = mbr.Mbr_partition_1;
     aux[1] = mbr.Mbr_partition_2;
@@ -389,31 +389,31 @@ func primerAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola
     i, j:=0,0;
     for i = 0; i < n - 1; i++{
         for j = 0; j < n - i - 1; j++{
-			actual := helpers.ByteArrayToInt(aux[j].Part_start[:])
-			siguiente := helpers.ByteArrayToInt(aux[j+1].Part_start[:])
+			actual := helpers.ByteArrayToInt64(aux[j].Part_start[:])
+			siguiente := helpers.ByteArrayToInt64(aux[j+1].Part_start[:])
             if (actual > siguiente){
                 aux[j], aux[j + 1] = aux[j + 1] , aux[j] 
 			}
 		}
 	}
     for i = 0; i < n; i++ {
-		actual := helpers.ByteArrayToInt(aux[i].Part_start[:])
+		actual := helpers.ByteArrayToInt64(aux[i].Part_start[:])
         espacio := actual - comienza; //int
-		necesito := helpers.ByteArrayToInt(particion.Part_size[:])
+		necesito := helpers.ByteArrayToInt64(particion.Part_size[:])
         if (espacio>=necesito){
-			copy(particion.Part_start[:],strconv.Itoa(comienza))
+			copy(particion.Part_start[:],helpers.IntToByteArray(comienza))
             return comienza;
         }
 
         if(espacio>=0){
-			nuevo := helpers.ByteArrayToInt(aux[i].Part_size[:])
-			actual := helpers.ByteArrayToInt(aux[i].Part_start[:])
+			nuevo := helpers.ByteArrayToInt64(aux[i].Part_size[:])
+			actual := helpers.ByteArrayToInt64(aux[i].Part_start[:])
             comienza = actual+ nuevo;
         }
     }
-    if (comienza==0){comienza = int(unsafe.Sizeof(info));}
-    x := helpers.ByteArrayToInt(mbr.Mbr_tamano[:]); //int
-	nuevo := helpers.ByteArrayToInt(particion.Part_size[:])
+    if (comienza==0){comienza = helpers.HandleSizeof(info);}
+    x := helpers.ByteArrayToInt64(mbr.Mbr_tamano[:]); //int
+	nuevo := helpers.ByteArrayToInt64(particion.Part_size[:])
     if ((x-comienza)>=nuevo){
         return comienza;
     }else{
@@ -433,7 +433,7 @@ func BytesToStructMBR(s []byte) estructuras.MBR {
 	return p
 }
 
-func mejorAjuste(mbr *estructuras.MBR,particion *estructuras.Particion,consola *string) int{
+func mejorAjuste(mbr *estructuras.MBR,particion *estructuras.Particion,consola *string) int64{
     
     aux := [4]estructuras.Particion{};
     aux[0] = mbr.Mbr_partition_1;
@@ -445,23 +445,23 @@ func mejorAjuste(mbr *estructuras.MBR,particion *estructuras.Particion,consola *
     i, j :=0,0
     for i = 0; i < n - 1; i++{
         for j = 0; j < n - i - 1; j++{
-            if (helpers.ByteArrayToInt(aux[j].Part_start[:]) > helpers.ByteArrayToInt(aux[j + 1].Part_start[:])){
+            if (helpers.ByteArrayToInt64(aux[j].Part_start[:]) > helpers.ByteArrayToInt64(aux[j + 1].Part_start[:])){
                 aux[j], aux[j + 1] = aux[j + 1] ,aux[j] 
 			}
 		}
 	}
 	var info estructuras.MBR
-	comienza := int(unsafe.Sizeof(info));
+	comienza := helpers.HandleSizeof(info);
     for i = 0; i < n; i++{
-        espacio := helpers.ByteArrayToInt(aux[i].Part_start[:]) - comienza;
+        espacio := helpers.ByteArrayToInt64(aux[i].Part_start[:]) - comienza;
         pares[i].Inicio = comienza;
         pares[i].Tamanio = espacio;
         if (espacio>=0){
-        comienza = helpers.ByteArrayToInt(aux[i].Part_start[:])+helpers.ByteArrayToInt(aux[i].Part_size[:]);
+        comienza = helpers.ByteArrayToInt64(aux[i].Part_start[:])+helpers.ByteArrayToInt64(aux[i].Part_size[:]);
         }
     }
-    if (comienza==0){comienza = int(unsafe.Sizeof(info));}
-    espacio := helpers.ByteArrayToInt(mbr.Mbr_tamano[:]) - comienza;
+    if (comienza==0){comienza = helpers.HandleSizeof(info);}
+    espacio := helpers.ByteArrayToInt64(mbr.Mbr_tamano[:]) - comienza;
     pares[4].Inicio = comienza;
     pares[4].Tamanio = espacio;
     for i = 0; i < 5 - 1; i++{
@@ -473,7 +473,7 @@ func mejorAjuste(mbr *estructuras.MBR,particion *estructuras.Particion,consola *
 	}
     for i = 0; i < 5; i++{
         x :=pares[i].Tamanio;
-    	a := helpers.ByteArrayToInt(particion.Part_size[:]);
+    	a := helpers.ByteArrayToInt64(particion.Part_size[:]);
         if(x>a){
             return pares[i].Inicio;
         }
@@ -482,7 +482,7 @@ func mejorAjuste(mbr *estructuras.MBR,particion *estructuras.Particion,consola *
     return 0;
 }
 
-func PeorAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola *string)int{
+func PeorAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola *string)int64{
     
 	aux := [4]estructuras.Particion{};
     aux[0] = mbr.Mbr_partition_1;
@@ -494,33 +494,33 @@ func PeorAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola *
     i, j := 0,0;
     for i = 0; i < n - 1; i++{
         for j = 0; j < n - i - 1; j++{
-            if helpers.ByteArrayToInt(aux[j].Part_start[:]) > helpers.ByteArrayToInt(aux[j + 1].Part_start[:]){
+            if helpers.ByteArrayToInt64(aux[j].Part_start[:]) > helpers.ByteArrayToInt64(aux[j + 1].Part_start[:]){
                 aux[j], aux[j + 1] = aux[j+1], aux[j]
 			}
 		}
 	}
 	var info estructuras.MBR
-    tamanio := 0; comienza := int(unsafe.Sizeof(info)); start := comienza;
+    tamanio := int64(0); comienza := helpers.HandleSizeof(info); start := comienza;
     for i = 0; i < n; i++{
-        espacio := helpers.ByteArrayToInt(aux[i].Part_start[:]) - comienza;
+        espacio := helpers.ByteArrayToInt64(aux[i].Part_start[:]) - comienza;
         if (espacio>tamanio){
             tamanio = espacio;
             start = comienza;
 
         }
         if(espacio>=0){
-        comienza = helpers.ByteArrayToInt(aux[i].Part_start[:])+helpers.ByteArrayToInt(aux[i].Part_size[:]);
+        comienza = helpers.ByteArrayToInt64(aux[i].Part_start[:])+helpers.ByteArrayToInt64(aux[i].Part_size[:]);
         }
     }
-    if (comienza==0){comienza = int(unsafe.Sizeof(info));}
+    if (comienza==0){comienza = helpers.HandleSizeof(info);}
 
-    x := helpers.ByteArrayToInt(mbr.Mbr_tamano[:]); 
+    x := helpers.ByteArrayToInt64(mbr.Mbr_tamano[:]); 
     espacio := x - comienza;
     if (espacio>tamanio){
         tamanio = espacio;
         start = comienza;
     }
-    if (tamanio>=helpers.ByteArrayToInt(particion.Part_size[:])){
+    if (tamanio>=helpers.ByteArrayToInt64(particion.Part_size[:])){
         return start;
     }else{
         *consola += "No hay espacio para esta particion: "+string(particion.Part_name[:]);
@@ -528,7 +528,7 @@ func PeorAjuste(mbr *estructuras.MBR, particion *estructuras.Particion,consola *
     return 0;    
 }
 func addParticion(path string, size int,unit rune,nombre string,consola *string){
-    tamanioBytes := calcularTamanio(size,unit);//Ha sumar o restar
+    tamanioBytes := int64(calcularTamanio(size,unit));//Ha sumar o restar
     disco, err := os.OpenFile(path,os.O_RDWR,0660);
 	if err != nil{
 		msg_error(err)
@@ -553,7 +553,7 @@ func addParticion(path string, size int,unit rune,nombre string,consola *string)
     i, j := 0,0;
     for i = 0; i < n - 1; i++{ //Se ordena
         for j = 0; j < n - i - 1; j++{
-            if (helpers.ByteArrayToInt(aux[j].Part_start[:]) > helpers.ByteArrayToInt(aux[j + 1].Part_start[:])){
+            if (helpers.ByteArrayToInt64(aux[j].Part_start[:]) > helpers.ByteArrayToInt64(aux[j + 1].Part_start[:])){
                 aux[j], aux[j + 1] = aux[j+1], aux[j]
 			}
 		}
@@ -571,18 +571,18 @@ func addParticion(path string, size int,unit rune,nombre string,consola *string)
         }
     }
     if (encontrado){
-        res := helpers.ByteArrayToInt(aux[i].Part_size[:]) + tamanioBytes; //Positivo o negativo
+        res := helpers.ByteArrayToInt64(aux[i].Part_size[:]) + tamanioBytes; //Positivo o negativo
         if(res<=0){
             *consola += "No quedará espacio en la partición\n";
         }else{
-            fin := helpers.ByteArrayToInt(mbr.Mbr_tamano[:])
+            fin := helpers.ByteArrayToInt64(mbr.Mbr_tamano[:])
             if(i+1<4){
-                fin =helpers.ByteArrayToInt(aux[i+1].Part_start[:])
+                fin =helpers.ByteArrayToInt64(aux[i+1].Part_start[:])
             }
-            if ((fin-helpers.ByteArrayToInt(aux[i].Part_start[:]))>=res){//Si lo puede guardar
+            if ((fin-helpers.ByteArrayToInt64(aux[i].Part_start[:]))>=res){//Si lo puede guardar
                 vacio := make([]byte,10)
 				copy(aux[i].Part_size[:],vacio);
-				copy(aux[i].Part_size[:],strconv.Itoa(res));
+				copy(aux[i].Part_size[:],helpers.IntToByteArray(int64(res)));
                 guardar = true;
             }else{
                 *consola += "Espacio insuficiente\n"
@@ -626,7 +626,7 @@ func eliminarParticion(path string, name string,consola *string){
     encontrado := false;
 	i:=0
     for  i = 0; i < 4; i++{
-        if helpers.ByteArrayToInt(aux[i].Part_start[:])!=0{
+        if helpers.ByteArrayToInt64(aux[i].Part_start[:])!=0{
             p:= aux[i].Part_name[:];
 			aux := make([]byte,50)
 			copy(aux,name)
@@ -640,12 +640,12 @@ func eliminarParticion(path string, name string,consola *string){
         nuevo :=estructuras.Particion{};
         ceros := make([]byte,1)
         ceros[0] = 0;
-        j:=0;
-		puntero, err :=disco.Seek(int64(helpers.ByteArrayToInt(aux[i].Part_start[:])),io.SeekStart)
+        j:=int64(0);
+		puntero, err :=disco.Seek(helpers.ByteArrayToInt64(aux[i].Part_start[:]),io.SeekStart)
         if err!=nil{
 			msg_error(err)
 		}
-		for (j!=helpers.ByteArrayToInt(aux[i].Part_size[:])){
+		for (j!=helpers.ByteArrayToInt64(aux[i].Part_size[:])){
 			disco.WriteAt(ceros,puntero)
             j++;
         }
@@ -714,9 +714,9 @@ func montarPart(ruta string,name string)string{
     encontrado := false;
 	i:=0
     for  i = 0; i < 4; i++{
-        if helpers.ByteArrayToInt(aux[i].Part_start[:])!=0{
+        if helpers.ByteArrayToInt64(aux[i].Part_start[:])!=0{
 			p:= aux[i].Part_name[:];
-			aux := make([]byte,50)
+			aux := make([]byte,15)
 			copy(aux,name)
 			if bytes.Equal(p[:],aux[:]){
             encontrado =true;
@@ -725,7 +725,7 @@ func montarPart(ruta string,name string)string{
         }
     }	
 	if encontrado{
-		letra := rune(i+65)
+		letra := rune(i+97)
 		id:= "24"+strconv.Itoa(i)
 		id += string(letra)
 		partMontada := estructuras.Pmontada{}
@@ -769,3 +769,319 @@ func Unmount(parametros []string)string{
 	}
 	return ""
 }
+func Mkfs(parametros []string) string{
+	id := ""
+	tipo := "full"
+	cant := 0
+	for i := 1; i < len(parametros); i++ {
+		parametro := strings.ToLower(parametros[i])
+		if strings.Contains(parametro,"id="){
+			id = strings.Replace(parametro,"id=","",1)
+			cant++
+		}else if strings.Contains(parametro,"type="){
+			tipo = strings.Replace(parametro,"type=","",1)
+			if tipo != "full"{
+				return "Tipo de formateo no válido\n"
+			}
+		}else{
+			return "Parámetro "+parametro+" no válido\n"
+		}
+	}
+	if cant==1{
+		return formatear(id,tipo)
+	}else{
+		return "Faltan parámetros obligatorios (id)\n"
+	}
+}
+func obtenerMBR(ruta string, mbr *estructuras.MBR,aux *[4]estructuras.Particion) *os.File{
+	disco, err := os.OpenFile(ruta,os.O_RDWR,0660);
+	if err != nil{
+		msg_error(err)
+	}
+    mbrEmpty := estructuras.MBR{};
+	si := Struct_to_bytes(mbrEmpty)
+	data := make([]byte,len(si))
+	_, err = disco.ReadAt(data,int64(0))
+	if err != nil && err != io.EOF {
+		msg_error(err)
+	}
+	*mbr = BytesToStructMBR(data)
+	aux[0] = mbr.Mbr_partition_1
+	aux[1] = mbr.Mbr_partition_2
+	aux[2] = mbr.Mbr_partition_3
+	aux[3] = mbr.Mbr_partition_4
+    return disco 
+}
+func getParticionMontada(id string,parti *estructuras.Pmontada) string{
+	for element := particionesMontadas.Front(); element != nil; element = element.Next() {
+		// do something with element.Value
+		part := estructuras.Pmontada(element.Value.(estructuras.Pmontada))
+		if part.Id == id{
+			//fmt.Print(parti)
+			*parti = part
+			return ""				
+		}
+	}
+	return "Partición "+id+" no encontrada"
+}
+func formatear(id string,tipo string) string{
+	particion := estructuras.Pmontada{}
+	consola := "Formateando partición "+id+"\n"
+	consola += getParticionMontada(id,&particion)
+	mbr := estructuras.MBR{}
+	aux := [4]estructuras.Particion{}
+	disco := obtenerMBR(particion.Path,&mbr,&aux)	
+	//Limpiar partición en el MBR
+	encontrado := false
+	i :=0
+	for i = 0; i < len(aux); i++ {
+        	if bytes.Equal(aux[i].Part_name[:],particion.Particion.Part_name[:]){
+            encontrado =true;
+            break;
+        }
+	}
+	if encontrado{
+		//Limpiado
+		ceros := make([]byte,1)
+		puntero ,err := disco.Seek(int64(helpers.ByteArrayToInt64(aux[i].Part_start[:])),io.SeekStart)
+		if err!=nil{
+			msg_error(err)
+		}
+		j := int64(0)
+		fin := helpers.ByteArrayToInt64(aux[i].Part_size[:])
+		for j!= fin{
+			disco.WriteAt(ceros,puntero)
+			j++
+		}
+		//Cantidad de archivos
+		inicio := helpers.ByteArrayToInt64(aux[i].Part_start[:])
+		tamanioParticion := helpers.ByteArrayToInt64(aux[i].Part_size[:])
+		tamanioSuper := helpers.HandleSizeof(estructuras.SuperBloque{})
+		tamanioInodo := helpers.HandleSizeof(estructuras.Inodo{})
+		tamanioBloque := helpers.HandleSizeof(estructuras.BloqueArchivos{})
+		n := (tamanioParticion-tamanioSuper)/(4+3*tamanioBloque+tamanioInodo);
+    	numero := int64(math.Floor(float64(n))); //Cantidad de inodos
+		fmt.Print(numero)
+		//llenando SuperBloque
+		superbloque := estructuras.SuperBloque{}
+		copy(superbloque.S_filesystem_type[:],helpers.IntToByteArray(2))
+		copy(superbloque.S_inodes_count[:],helpers.IntToByteArray(numero))
+		copy(superbloque.S_blocks_count[:],helpers.IntToByteArray(3*numero))
+		copy(superbloque.S_free_inodes_count[:],helpers.IntToByteArray(numero))
+		copy(superbloque.S_free_blocks_count[:],helpers.IntToByteArray(3*numero))
+		tim := time.Now()
+		copy(superbloque.S_mtime[:],[]byte(tim.String()))
+		copy(superbloque.S_mnt_count[:],helpers.IntToByteArray(0))
+		copy(superbloque.S_magic[:],"EF53")
+		copy(superbloque.S_inode_size[:],helpers.IntToByteArray(tamanioInodo))
+		copy(superbloque.S_block_size[:],helpers.IntToByteArray(tamanioBloque))
+		copy(superbloque.S_firts_ino[:],helpers.IntToByteArray(0))
+		copy(superbloque.S_first_blo[:],helpers.IntToByteArray(0))
+		copy(superbloque.S_bm_inode_start[:],helpers.IntToByteArray(inicio+tamanioSuper))
+		copy(superbloque.S_bm_block_start[:],helpers.IntToByteArray(inicio+tamanioSuper+numero))
+		copy(superbloque.S_inode_start[:],helpers.IntToByteArray(inicio+tamanioSuper+4*numero))
+		copy(superbloque.S_block_start[:],helpers.IntToByteArray(inicio+tamanioSuper+4*numero+numero*tamanioInodo))
+		puntero, e := disco.Seek(inicio,io.SeekStart)
+		if e!=nil{msg_error(e)}
+		disco.WriteAt(Struct_to_bytes(superbloque),puntero)
+		disco.Close()
+		iniciarBitmaps(particion.Path,helpers.ByteArrayToInt64(superbloque.S_bm_inode_start[:]),
+						helpers.ByteArrayToInt64(superbloque.S_inodes_count[:]),
+						helpers.ByteArrayToInt64(superbloque.S_bm_block_start[:]),
+						helpers.ByteArrayToInt64(superbloque.S_blocks_count[:]))
+		fmt.Print()
+		carpetaRaiz(superbloque,aux[i],particion.Path)
+		archivoUsers(id,"1,G,root\n 1,U,root,root,123,\n",disco,&superbloque,&mbr)
+	}else{
+		consola += "Partición no encontrada en disco"
+	}
+	return consola
+}
+func carpetaRaiz(super estructuras.SuperBloque, particion estructuras.Particion,ruta string){
+	disco, err := os.OpenFile(ruta,os.O_RDWR,0660);
+	if err != nil{
+		msg_error(err)
+	}
+	//Posiciones para saber dónde escribir
+	IniciaBitmapInodo := super.S_bm_inode_start[:]
+	InodoLibreBM := super.S_firts_ino[:]
+    Inodo_libreI := helpers.ByteArrayToInt64(super.S_inode_start[:])+(helpers.ByteArrayToInt64(InodoLibreBM)*helpers.ByteArrayToInt64(super.S_inode_size[:]));//posicion archivo del inodo libre
+	
+
+	inodoRaiz := estructuras.Inodo{}
+	estructuras.NuevoInodo(&inodoRaiz,1,1,0,"0","777")
+	//Actualizamos Bitmap, inodos libres, primer inodo libre
+	actualizarBitmapInodo(disco,helpers.ByteArrayToInt64(super.S_inodes_count[:]),helpers.ByteArrayToInt64(IniciaBitmapInodo),&super)
+	nuevoLibre := helpers.ByteArrayToInt64(super.S_free_inodes_count[:])-1
+	copy(super.S_free_inodes_count[:],helpers.IntToByteArray(nuevoLibre))
+
+	// Bloque carpetaRaiz
+	IniciaBitmapBloque := super.S_bm_block_start[:]
+	PrimerBloqueLibre := super.S_first_blo[:]
+	BloqueLibre := helpers.ByteArrayToInt64(super.S_block_start[:]) + helpers.ByteArrayToInt64(super.S_block_size[:])*helpers.ByteArrayToInt64(PrimerBloqueLibre)
+	
+	carpetaR := estructuras.BloqueCarpeta{}
+	estructuras.NuevoBloqueCarpeta(&carpetaR)//Constructor xd
+	// Los primeros 2 registros del primer apuntador directo del Inodo son la carpeta y carpeta padre
+	copy(carpetaR.B_content[0].B_name[:],"/")
+	copy(carpetaR.B_content[0].B_inodo[:],InodoLibreBM[:]) // Apuntan al inodo creado antes
+	copy(carpetaR.B_content[1].B_name[:],"/")
+	copy(carpetaR.B_content[1].B_inodo[:],InodoLibreBM[:])
+	//Primer apuntador directo 
+	inodoRaiz.I_block[0] = InodoLibreBM[0]
+
+	actualizarBitmapBloque(disco,helpers.ByteArrayToInt64(super.S_blocks_count[:]),
+								helpers.ByteArrayToInt64(IniciaBitmapBloque[:]),&super)
+
+	nuevoBloqueLibre := helpers.ByteArrayToInt64(super.S_free_blocks_count[:])-1
+	copy(super.S_free_blocks_count[:],helpers.IntToByteArray(nuevoBloqueLibre))	
+	
+	//Guardamos estructuras
+	puntero,e:=disco.Seek(helpers.ByteArrayToInt64(particion.Part_start[:]),io.SeekStart)
+	if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(super),puntero)
+
+
+	puntero,e =disco.Seek(Inodo_libreI,io.SeekStart)
+	if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(inodoRaiz),puntero)
+	
+	puntero,e =disco.Seek(BloqueLibre,io.SeekStart)
+	if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(carpetaR),puntero)
+	disco.Close()
+}
+func actualizarBitmapInodo(disco *os.File,fin int64,inicio int64,super *estructuras.SuperBloque){
+	//Agregamos en el último libre
+	prt,e:=disco.Seek(helpers.ByteArrayToInt64(super.S_firts_ino[:])+inicio,io.SeekStart)
+	if e!=nil{msg_error(e)}
+	disco.WriteAt([]byte{'1'},prt)
+	//Actualizamos el libre
+	for i := int64(0); i < fin; i++ {
+		ptr,e:=disco.Seek(inicio+i,io.SeekStart)
+		if e!=nil{msg_error(e)}
+		x := make([]byte,1)
+		disco.ReadAt(x,ptr)
+		if x[0] == '0'{
+			copy(super.S_firts_ino[:],helpers.IntToByteArray(i))
+			break
+		}
+	}
+}
+func actualizarBitmapBloque(disco *os.File,fin int64,inicio int64,super *estructuras.SuperBloque){
+	//Agregamos en el último libre
+	prt,e:=disco.Seek(helpers.ByteArrayToInt64(super.S_first_blo[:])+inicio,io.SeekStart)
+	if e!=nil{msg_error(e)}
+	disco.WriteAt([]byte{'1'},prt)
+	//Actualizamos el libre
+	for i := int64(0); i < fin; i++ {
+		ptr,e:=disco.Seek(inicio+i,io.SeekStart)
+		if e!=nil{msg_error(e)}
+		x := make([]byte,1)
+		disco.ReadAt(x,ptr)
+		if x[0] == '0'{
+			copy(super.S_first_blo[:],helpers.IntToByteArray(i))
+			break
+		}
+	}
+}
+func archivoUsers(id string,contenido string,disco *os.File,super *estructuras.SuperBloque,mbr *estructuras.MBR)string{
+	Inodo := estructuras.Inodo{}
+	estructuras.NuevoInodo(&Inodo,1,1,0,"1","")
+	carpeta := estructuras.BloqueCarpeta{}
+	copy(carpeta.B_content[0].B_name[:],"/")
+    copy(carpeta.B_content[0].B_inodo[:],"0") //modificar
+	copy(carpeta.B_content[1].B_name[:],"/")
+    copy(carpeta.B_content[1].B_inodo[:],"0") //modificar
+	copy(carpeta.B_content[2].B_name[:],"users.txt")
+    copy(carpeta.B_content[2].B_inodo[:],"1") //modificar
+    InodoArchivo := estructuras.Inodo{}
+	estructuras.NuevoInodo(&InodoArchivo,1,1,0,"0","") // Ver Permisos y size (se actualiza creo)
+	for i := 0; i < len(InodoArchivo.I_block); i++ {
+		apuntador := InodoArchivo.I_block[i]
+		if apuntador == 0{
+			
+		}
+	}
+
+	fmt.Print()
+		
+	return ""
+}
+func iniciarBitmaps(ruta string,inicioInodo int64,finInodo int64,inicioBloque int64, finBloque int64){
+	disco, err := os.OpenFile(ruta,os.O_RDWR,0660);
+	if err != nil{
+		msg_error(err)
+	}
+	puntero, e := disco.Seek(inicioInodo,io.SeekStart)
+	if e!=nil{
+		msg_error(e)
+	}
+	for i := 0; i < int(finInodo); i++ {
+		disco.WriteAt([]byte{'0'},puntero)
+		inicioInodo ++
+		puntero, e = disco.Seek(inicioInodo,io.SeekStart)
+	}
+	puntero, e = disco.Seek(inicioBloque,io.SeekStart)
+	if e!=nil{
+		msg_error(e)
+	}
+	for i := 0; i < int(finBloque); i++ {
+		disco.WriteAt([]byte{'0'},puntero)
+		inicioBloque ++
+		puntero, e = disco.Seek(inicioBloque,io.SeekStart)
+	}
+}/*
+func buscarCarpeta(disco *os.File,super estructuras.SuperBloque,ruta string) int{
+	inicioInodo := helpers.ByteArrayToInt64(super.S_bm_inode_start[:])
+	inicioBloques := helpers.ByteArrayToInt64(super.S_bm_block_start[:])
+	puntero , err :=disco.Seek(int64(inicioInodo),io.SeekStart)
+	if err!=nil{
+		msg_error(err)
+	}
+	data := Struct_to_bytes(estructuras.Inodo{})
+	_,err = disco.ReadAt(data,puntero)
+	if err!=nil{
+		msg_error(err)
+	}
+	Inodo := helpers.ByteArrayToInode(data)
+	pdirecto := Inodo.I_block[0]
+	tipo := Inodo.I_type[0]
+	index := 0
+	existe := false
+	for pdirecto != 0{
+		if tipo== 1{
+			puntero , err :=disco.Seek(int64(inicioBloques+pdirecto),io.SeekStart)
+			if err!=nil{
+				msg_error(err)
+			}
+			data := Struct_to_bytes(estructuras.BloqueCarpeta{})
+			_,err = disco.ReadAt(data,puntero)
+			if err!=nil{
+				msg_error(err)
+			}
+			bCarpeta := helpers.ByteArrayToDirBlock(data)
+			for i := 0; i < 4; i++ {
+				content := bCarpeta.B_content[i]
+				if content.B_inodo!=0{
+					if content.B_name == "" {//&& index == len -1
+						//Index==len-1{existe =true; break}
+						//Dirección del siguiente Inodo
+						//Decodificarlo
+						//actualizar pInodo
+						// Actualizar index
+
+					}
+				}else{
+					break
+				}
+			}
+		}
+		index++
+		pdirecto = Inodo.I_block[index]
+	}
+	if !existe{
+
+	}
+	
+}*/

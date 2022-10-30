@@ -39,7 +39,7 @@ func Split_comand(entrada string,consola *string) {
 		comando := command1[i]
 		if strings.Contains(comando, "mostrar") { // Command without paramaters
 			commandArray = append(commandArray, comando)
-		} else if strings.Contains(comando,"#") {
+		} else if strings.Contains(comando,"#") || strings.Contains(comando,"pause") {
 			*consola += comando + "\n"
 			continue
 		}else{
@@ -64,5 +64,7 @@ func execComand(command []string,consola *string){
 		*consola += comando.Mount(command)
 	case "unmount":
 		*consola += comando.Unmount(command)
+	case "mkfs":
+		*consola += comando.Mkfs(command)
 	}
 }
