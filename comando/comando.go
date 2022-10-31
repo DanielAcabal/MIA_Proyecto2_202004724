@@ -1109,6 +1109,7 @@ func iniciarSesion(id string,user string, password string) string{
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
 	consola += buscarUsuario(contenido,id,user,password)
+	disco.Close()
 	return consola
 }
 func buscarArchivo(posInodo int64,super *estructuras.SuperBloque,disco *os.File, directorio []string,indice int) int{
@@ -1176,10 +1177,11 @@ func buscarUsuario(contenido string,id string,user string, password string) stri
 	}
 	return "Error: Usuario "+user+" no encontrado"
 }
-func buscarGrupo(contenido string,grupo string) (bool,int){
+func buscarGrupo(contenido string,grupo string) (bool,int,int){
 	registros := strings.Split(contenido,"\n")
 	index := 0
 	i :=0
+	offset :=0
 	for i = 0; i < len(registros)-1; i++ {
 		datos := strings.Split(registros[i],",")
 		if datos[0]!="0"{
@@ -1187,12 +1189,13 @@ func buscarGrupo(contenido string,grupo string) (bool,int){
 			if x>index{index = x}
 			if datos[1]=="G"{
 				if datos[2] == grupo{
-					return true,index
+					return true,index,offset
 				}
 			}
 		}
+		offset += len(registros[i])+1
 	}
-	return false,index
+	return false,index,offset
 }
 func Logout(parametros []string)string{
 	consola := "==========LOGOUT==========\n"
@@ -1207,8 +1210,9 @@ func Logout(parametros []string)string{
 	}
 	return consola + "Error: No hay una sesión activa"
 }
-func Mkgrp(parametros []string) string{
+func MkRmgrp(parametros []string,remover bool) string{
 	consola := "==========MKGRP==========\n"
+	if remover{consola = "==========RMGRP==========\n"}
 	cant := 0
 	nombreGrupo := ""
 	if !sesionInicida{ return consola + "Debe iniciar sesión"}
@@ -1227,7 +1231,11 @@ func Mkgrp(parametros []string) string{
 	if cant == 1{
 		if usuarioActual.User !="root" { consola+= "Error: Debe ser usuario root para crear un grupo"
 		}else{
-			consola += crearGrupo(nombreGrupo)
+			if !remover{
+				consola += crearGrupo(nombreGrupo)
+			}else{
+				consola += removerGrupo(nombreGrupo)
+			}
 		}
 	}else{
 		consola += "Error: Faltan parámetros obligatorios\n"
@@ -1244,7 +1252,8 @@ func crearGrupo(nombreGrupo string) string{
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
 	fmt.Println(len(contenido))
-	existe,index:= buscarGrupo(contenido,nombreGrupo)
+	existe,index,init:= buscarGrupo(contenido,nombreGrupo)
+	init++
 	if existe {consola += "Error: El grupo "+nombreGrupo+" ya existe\n"
 	}else{
 		data := strconv.Itoa(index+1)+",G,"+nombreGrupo+"\n"
@@ -1287,5 +1296,36 @@ func crearGrupo(nombreGrupo string) string{
 		disco.WriteAt(Struct_to_bytes(inodo),puntero)
 		consola += "Grupo "+nombreGrupo+" creado con éxito"
 	}
+	disco.Close()
+	return consola
+}
+func removerGrupo(nombreGrupo string) string{
+	consola := "==========REMOVIENDO GRUPO==========\n"
+	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
+	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
+	carpetas := strings.Split("/users.txt","/")
+	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
+	inodo := helpers.ReadInode(disco,int64(pos))
+	contenido := contenidoArchivo(inodo,&superBloque,disco)
+	fmt.Println(len(contenido))
+	existe,index,init:= buscarGrupo(contenido,nombreGrupo)
+	index++ // no se usa xd
+	if !existe{
+		consola += "El grupo "+ nombreGrupo+" no existe"
+	}else{
+
+		offset := init%64
+		pos := init/64
+		directo,e:= strconv.ParseInt(string(inodo.I_block[pos]),36,64);if e!=nil{msg_error(e)}
+		sizeB := helpers.ByteArrayToInt64(superBloque.S_block_size[:])
+		inicioBloque := helpers.ByteArrayToInt64(superBloque.S_block_start[:])
+		bloque := helpers.ReadFileBlock(disco,inicioBloque+int64(directo)*sizeB)
+		bloque.B_content[offset] = '0'
+		puntero,e:= disco.Seek(inicioBloque+int64(directo)*sizeB,io.SeekStart); if e!=nil{msg_error(e)}
+		disco.WriteAt(Struct_to_bytes(bloque),puntero)
+		consola+="Grupo "+nombreGrupo+" eliminado con éxito"
+	}
+	disco.Close()
 	return consola
 }
