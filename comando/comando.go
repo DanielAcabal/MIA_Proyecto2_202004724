@@ -8,7 +8,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"os"
 	"regexp"
@@ -860,7 +859,7 @@ func formatear(id string,tipo string) string{
 		tamanioInodo := helpers.HandleSizeof(estructuras.Inodo{})
 		tamanioBloque := helpers.HandleSizeof(estructuras.BloqueArchivos{})
 		n := (tamanioParticion-tamanioSuper)/(4+3*tamanioBloque+tamanioInodo);
-    	numero := int64(math.Floor(float64(n))); //Cantidad de inodos
+    	numero := n; //Cantidad de inodos
 		fmt.Print(numero)
 		//llenando SuperBloque
 		superbloque := estructuras.SuperBloque{}
@@ -889,15 +888,15 @@ func formatear(id string,tipo string) string{
 						helpers.ByteArrayToInt64(superbloque.S_inodes_count[:]),
 						helpers.ByteArrayToInt64(superbloque.S_bm_block_start[:]),
 						helpers.ByteArrayToInt64(superbloque.S_blocks_count[:]))
-		fmt.Print()
-		carpetaRaiz(superbloque,aux[i],particion.Path)
-		archivoUsers(id,"1,G,root\n 1,U,root,root,123,\n",disco,&superbloque,&mbr)
+	
+		carpetaRaiz(&superbloque,aux[i],particion.Path)
+		consola += archivoUsers("1,G,root\n 1,U,root,root,123,\n",particion.Path,&superbloque,aux[i])
 	}else{
 		consola += "Partición no encontrada en disco"
 	}
 	return consola
 }
-func carpetaRaiz(super estructuras.SuperBloque, particion estructuras.Particion,ruta string){
+func carpetaRaiz(super *estructuras.SuperBloque, particion estructuras.Particion,ruta string){
 	disco, err := os.OpenFile(ruta,os.O_RDWR,0660);
 	if err != nil{
 		msg_error(err)
@@ -911,7 +910,7 @@ func carpetaRaiz(super estructuras.SuperBloque, particion estructuras.Particion,
 	inodoRaiz := estructuras.Inodo{}
 	estructuras.NuevoInodo(&inodoRaiz,1,1,0,"0","777")
 	//Actualizamos Bitmap, inodos libres, primer inodo libre
-	actualizarBitmapInodo(disco,helpers.ByteArrayToInt64(super.S_inodes_count[:]),helpers.ByteArrayToInt64(IniciaBitmapInodo),&super)
+	actualizarBitmapInodo(disco,helpers.ByteArrayToInt64(super.S_inodes_count[:]),helpers.ByteArrayToInt64(IniciaBitmapInodo),super)
 	nuevoLibre := helpers.ByteArrayToInt64(super.S_free_inodes_count[:])-1
 	copy(super.S_free_inodes_count[:],helpers.IntToByteArray(nuevoLibre))
 
@@ -931,7 +930,7 @@ func carpetaRaiz(super estructuras.SuperBloque, particion estructuras.Particion,
 	inodoRaiz.I_block[0] = InodoLibreBM[0]
 
 	actualizarBitmapBloque(disco,helpers.ByteArrayToInt64(super.S_blocks_count[:]),
-								helpers.ByteArrayToInt64(IniciaBitmapBloque[:]),&super)
+								helpers.ByteArrayToInt64(IniciaBitmapBloque[:]),super)
 
 	nuevoBloqueLibre := helpers.ByteArrayToInt64(super.S_free_blocks_count[:])-1
 	copy(super.S_free_blocks_count[:],helpers.IntToByteArray(nuevoBloqueLibre))	
@@ -985,28 +984,58 @@ func actualizarBitmapBloque(disco *os.File,fin int64,inicio int64,super *estruct
 		}
 	}
 }
-func archivoUsers(id string,contenido string,disco *os.File,super *estructuras.SuperBloque,mbr *estructuras.MBR)string{
-	Inodo := estructuras.Inodo{}
-	estructuras.NuevoInodo(&Inodo,1,1,0,"1","")
-	carpeta := estructuras.BloqueCarpeta{}
-	copy(carpeta.B_content[0].B_name[:],"/")
-    copy(carpeta.B_content[0].B_inodo[:],"0") //modificar
-	copy(carpeta.B_content[1].B_name[:],"/")
-    copy(carpeta.B_content[1].B_inodo[:],"0") //modificar
-	copy(carpeta.B_content[2].B_name[:],"users.txt")
-    copy(carpeta.B_content[2].B_inodo[:],"1") //modificar
-    InodoArchivo := estructuras.Inodo{}
-	estructuras.NuevoInodo(&InodoArchivo,1,1,0,"0","") // Ver Permisos y size (se actualiza creo)
-	for i := 0; i < len(InodoArchivo.I_block); i++ {
-		apuntador := InodoArchivo.I_block[i]
-		if apuntador == 0{
-			
-		}
+func archivoUsers(contenido string,ruta string,super *estructuras.SuperBloque,particion estructuras.Particion)string{
+	disco, err := os.OpenFile(ruta,os.O_RDWR,0660);
+	if err != nil{
+		msg_error(err)
 	}
+	//Reservamos posiciones
+	InicioBitmapInodo := helpers.ByteArrayToInt64(super.S_bm_inode_start[:])
+	InodoLibreBM  := super.S_firts_ino
+	InodoLibre := helpers.ByteArrayToInt64(super.S_inode_start[:])+helpers.ByteArrayToInt64(super.S_inode_size[:])*helpers.ByteArrayToInt64(InodoLibreBM[:])
+	//Crear el Inodo
+	InodoUsers := estructuras.Inodo{}
+	estructuras.NuevoInodo(&InodoUsers,1,1,int64(len(contenido)),"1","777")
+	//Actualizar bitmap, primer libre y cantidad libre
+	actualizarBitmapInodo(disco,helpers.ByteArrayToInt64(super.S_inodes_count[:]),InicioBitmapInodo,super)
+	nuevoCantInodoLibre := helpers.ByteArrayToInt64(super.S_free_inodes_count[:]) - 1
+	copy(super.S_free_inodes_count[:],helpers.IntToByteArray(nuevoCantInodoLibre))
+    
+	//Reservamos posiciones x2
+	InicioBitmapBloque := helpers.ByteArrayToInt64(super.S_bm_block_start[:])
+	BloqueLibreBM  := super.S_first_blo
+	BloqueLibre := helpers.ByteArrayToInt64(super.S_block_start[:])+helpers.ByteArrayToInt64(super.S_block_size[:])*helpers.ByteArrayToInt64(BloqueLibreBM[:])
+	
+	//Crear el archivo
+	archivoNuevo := estructuras.BloqueArchivos{}
+	copy(archivoNuevo.B_content[:],contenido)
+	//Actualizar bitmap, primer libre y cantidad libre
+	actualizarBitmapBloque(disco,helpers.ByteArrayToInt64(super.S_blocks_count[:]),InicioBitmapBloque,super)
+	nuevoCantBloqueLibre := helpers.ByteArrayToInt64(super.S_free_blocks_count[:]) - 1
+	copy(super.S_free_blocks_count[:],helpers.IntToByteArray(nuevoCantBloqueLibre))
+    
+	// Apuntar bloques
+		//Bloque carpeta Raiz (Inicio de tabla bloques) -> InodoUsers
+		data := make([]byte,len(Struct_to_bytes(estructuras.BloqueCarpeta{})))
+		puntero,e:=disco.Seek(helpers.ByteArrayToInt64(super.S_block_start[:]),io.SeekStart); if e!=nil{msg_error(e)}
+		disco.ReadAt(data,puntero)
+		RaizCarpeta := helpers.ByteArrayToDirBlock(data)
+		copy(RaizCarpeta.B_content[2].B_name[:],"users.txt")
+		copy(RaizCarpeta.B_content[2].B_inodo[:],InodoLibreBM[:])
+		puntero,e =disco.Seek(helpers.ByteArrayToInt64(super.S_block_start[:]),io.SeekStart); if e!=nil{msg_error(e)}
+		disco.WriteAt(Struct_to_bytes(RaizCarpeta),puntero)
 
-	fmt.Print()
-		
-	return ""
+		//InodoUsers -> archivoNuevo
+		InodoUsers.I_block[0] = BloqueLibreBM[0] //Revisar porque pueden ser +255
+	//Escribir en archivo
+	puntero,e = disco.Seek(helpers.ByteArrayToInt64(particion.Part_start[:]),io.SeekStart); if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(super),puntero)
+	puntero,e = disco.Seek(InodoLibre,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(InodoUsers),puntero)
+	puntero,e = disco.Seek(BloqueLibre,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(archivoNuevo),puntero)
+	disco.Close()
+	return "Archivo Users.txt Creado"
 }
 func iniciarBitmaps(ruta string,inicioInodo int64,finInodo int64,inicioBloque int64, finBloque int64){
 	disco, err := os.OpenFile(ruta,os.O_RDWR,0660);
@@ -1020,7 +1049,7 @@ func iniciarBitmaps(ruta string,inicioInodo int64,finInodo int64,inicioBloque in
 	for i := 0; i < int(finInodo); i++ {
 		disco.WriteAt([]byte{'0'},puntero)
 		inicioInodo ++
-		puntero, e = disco.Seek(inicioInodo,io.SeekStart)
+		puntero, e = disco.Seek(inicioInodo,io.SeekStart); if e!=nil{msg_error(e)}
 	}
 	puntero, e = disco.Seek(inicioBloque,io.SeekStart)
 	if e!=nil{
@@ -1029,7 +1058,7 @@ func iniciarBitmaps(ruta string,inicioInodo int64,finInodo int64,inicioBloque in
 	for i := 0; i < int(finBloque); i++ {
 		disco.WriteAt([]byte{'0'},puntero)
 		inicioBloque ++
-		puntero, e = disco.Seek(inicioBloque,io.SeekStart)
+		puntero, e = disco.Seek(inicioBloque,io.SeekStart); if e!=nil{msg_error(e)}
 	}
 }/*
 func buscarCarpeta(disco *os.File,super estructuras.SuperBloque,ruta string) int{
