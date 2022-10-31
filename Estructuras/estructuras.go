@@ -81,7 +81,7 @@ func NuevoInodo(nuevo *Inodo,uId int64,gId int64,size int64,tipo string,perm str
     copy(nuevo.I_atime[:],creado.String())
     copy(nuevo.I_ctime[:],creado.String())
     copy(nuevo.I_mtime[:],creado.String())
-    nulos := make([]byte,15)
+    nulos := make([]byte,16)
     for i := 0; i < len(nulos); i++ {
         nulos[i] = IntToByteArray(-1)[0]    }
     copy(nuevo.I_block[:],nulos)
@@ -102,4 +102,9 @@ func IntToByteArray(num int64) []byte {
 	cos := strconv.FormatInt(num, 36)
 	copy(arr,cos)
 	return arr
+}
+type Usuario struct{
+    Id string
+    User string
+    Password string
 }

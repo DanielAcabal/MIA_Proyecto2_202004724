@@ -37,8 +37,8 @@ func Split_comand(entrada string,consola *string) {
 
 	for i := 0; i < len(command1); i++ {
 		comando := command1[i]
-		if strings.Contains(comando, "mostrar") { // Command without paramaters
-			commandArray = append(commandArray, comando)
+		if comando == "" { // Command without paramaters
+			continue
 		} else if strings.Contains(comando,"#") || strings.Contains(comando,"pause") {
 			*consola += comando + "\n"
 			continue
@@ -66,5 +66,13 @@ func execComand(command []string,consola *string){
 		*consola += comando.Unmount(command)
 	case "mkfs":
 		*consola += comando.Mkfs(command)
+	case "login":
+		*consola += comando.Login(command)
+	case "logout":
+		*consola += comando.Logout(command)
+	case "mkgrp":
+		*consola += comando.Mkgrp(command)
+	default:
+		*consola += "Error: No existe el comando" + command[0]
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"unsafe"
 	//"unsafe"
@@ -86,4 +87,42 @@ func ByteArrayToDirBlock(arr []byte) estructuras.BloqueCarpeta {
 		msg_error(err)
 	}
 	return p
+}
+func ByteArrayToFileBlock(arr []byte) estructuras.BloqueArchivos {
+	// Decodificacion de [] Bytes a Struct ejemplo
+	p := estructuras.BloqueArchivos{}
+	dec := gob.NewDecoder(bytes.NewReader(arr))
+	err := dec.Decode(&p)
+	if err != nil && err != io.EOF {
+		msg_error(err)
+	}
+	return p
+}
+func ByteArrayToSuperBlock(arr []byte) estructuras.SuperBloque {
+	// Decodificacion de [] Bytes a Struct ejemplo
+	p := estructuras.SuperBloque{}
+	dec := gob.NewDecoder(bytes.NewReader(arr))
+	err := dec.Decode(&p)
+	if err != nil && err != io.EOF {
+		msg_error(err)
+	}
+	return p
+}
+func ReadInode(disco *os.File,pos int64) estructuras.Inodo{
+	data := make([]byte,HandleSizeof(estructuras.Inodo{}))
+	puntero,e :=disco.Seek(pos,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.ReadAt(data,puntero)
+	return ByteArrayToInode(data)
+}
+func ReadFileBlock(disco *os.File,pos int64) estructuras.BloqueArchivos{
+	data := make([]byte,HandleSizeof(estructuras.BloqueArchivos{}))
+	puntero,e :=disco.Seek(pos,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.ReadAt(data,puntero)
+	return ByteArrayToFileBlock(data)
+}
+func ReadSuperBlock(disco *os.File,pos int64) estructuras.SuperBloque{
+	data := make([]byte,HandleSizeof(estructuras.SuperBloque{}))
+	puntero,e :=disco.Seek(pos,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.ReadAt(data,puntero)
+	return ByteArrayToSuperBlock(data)
 }
