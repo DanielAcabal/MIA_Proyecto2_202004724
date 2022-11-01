@@ -19,7 +19,7 @@ type Particion struct{
     Part_name [15]byte
 }
 type MBR struct{
-	Mbr_tamano [5]byte
+	Mbr_tamano [8]byte
 	Mbr_fecha_creacion [15]byte
 	Mbr_dsk_signature [5]byte
 	Dsk_fit [1]byte

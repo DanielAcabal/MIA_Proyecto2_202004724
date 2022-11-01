@@ -26,13 +26,13 @@ func main(){
 	http.HandleFunc("/Login",LogIn)
 	http.HandleFunc("/File",File)
 	http.HandleFunc("/SB",SB)
+	http.HandleFunc("/Disk",Disk)
 	fmt.Println("Servidor en puerto 5000!")
 	log.Fatal(http.ListenAndServe(":5000",nil))
 }
 func File(w http.ResponseWriter, r *http.Request){
 	enableCors(&w)
 	w.WriteHeader(http.StatusAccepted)
-
 	w.Header().Set("Content-Type","application/json")
 	c := comando.RepFile
 	json.NewEncoder(w).Encode(Contenido{Entrada:"",Consola:c})
@@ -40,9 +40,15 @@ func File(w http.ResponseWriter, r *http.Request){
 func SB(w http.ResponseWriter, r *http.Request){
 	enableCors(&w)
 	w.WriteHeader(http.StatusAccepted)
-
 	w.Header().Set("Content-Type","application/json")
 	c := comando.RepSB
+	json.NewEncoder(w).Encode(Contenido{Entrada:"",Consola:c})
+}
+func Disk(w http.ResponseWriter, r *http.Request){
+	enableCors(&w)
+	w.WriteHeader(http.StatusAccepted)
+	w.Header().Set("Content-Type","application/json")
+	c := comando.RepDisk
 	json.NewEncoder(w).Encode(Contenido{Entrada:"",Consola:c})
 }
 func LogIn(w http.ResponseWriter, r *http.Request){

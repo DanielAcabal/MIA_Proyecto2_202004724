@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 	"unsafe"
@@ -42,10 +43,6 @@ func IntToByteArray(num int64) []byte {
 }
 func ByteArrayToInt64(arr []byte) int64 {
 	val := int64(0)
-	/*size := len(arr)
-	for i := 0; i < size; i++ {
-		*(*uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&val)) + uintptr(i))) = arr[i]
-	}*/
 	size := len(arr)
 	for i := 0; i < size; i++ {
 		if arr[i]==0{break}
@@ -55,6 +52,20 @@ func ByteArrayToInt64(arr []byte) int64 {
 			msg_error(e)
 		}
 		val += x
+	}
+	return val
+}
+func ByteArrayToFloat64(arr []byte) float64 {
+	val := float64(0)
+	size := len(arr)
+	for i := 0; i < size; i++ {
+		if arr[i]==0{break}
+		val = val*36
+		x,e:= strconv.ParseInt(string(arr[i]),36,64)
+		if e!=nil{
+			msg_error(e)
+		}
+		val += float64(x)
 	}
 	return val
 }
@@ -125,4 +136,12 @@ func ReadSuperBlock(disco *os.File,pos int64) estructuras.SuperBloque{
 	puntero,e :=disco.Seek(pos,io.SeekStart); if e!=nil{msg_error(e)}
 	disco.ReadAt(data,puntero)
 	return ByteArrayToSuperBlock(data)
+}
+func Round(num float64) int {
+    return int(num + math.Copysign(0.5, num))
+}
+
+func ToFixed(num float64, precision int) float64 {
+    output := math.Pow(10, float64(precision))
+    return float64(Round(num * output)) / output
 }

@@ -52,7 +52,7 @@ func Split_comand(entrada string,consola *string) {
 	
 }
 func execComand(command []string,consola *string){
-	switch command[0] {
+	switch strings.ToLower(command[0]) {
 	case "exec":
 	case "mkdisk":
 		*consola += comando.Mkdisk(command)

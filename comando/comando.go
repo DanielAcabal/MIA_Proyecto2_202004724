@@ -21,6 +21,7 @@ var usuarioActual = estructuras.Usuario{}
 var sesionInicida = false
 var RepFile = "digraph{\"RepFile\"}"
 var RepSB = "digraph{\"RepSB\"}"
+var RepDisk = "digraph{\"RepDisk\"}"
 /*======================MKDISK=======================*/
 func Mkdisk(commandArray []string) string{
 	//mkdisk -Size=3000 -unit=K -path=/home/user/Disco4.dk
@@ -274,7 +275,7 @@ func Fdisk(commandArray []string) string {
             eliminarParticion(ruta,nombreParticion,&consola);
         }else{
             if(primero=="Size"){
-            consola += "Creando particion: "+nombreParticion
+            consola += "Creando particion: "+nombreParticion+"\n"
             crearParticion(nuevo,ruta,tamanio,unidad,0,&consola);
             }else{
             consola += "Cambio de tamaño a particion: "+nombreParticion+"\n"
@@ -322,7 +323,7 @@ func crearParticion(particion estructuras.Particion,path string, size int, unit 
     }   
     }
     //Verificar el nombre de la particion, si existe
-    if (!crear) {*consola+="La partición "+string(particion.Part_name[:])+" ya existe";
+    if (!crear) {*consola+="La partición "+string(particion.Part_name[:])+" ya existe\n";
 	}else{
     if ((primarias+extendidas)<4){ // Para otra primaria o una extendida
         c :=int64(0)
@@ -354,7 +355,7 @@ func crearParticion(particion estructuras.Particion,path string, size int, unit 
             }  
     
 	}else{
-        *consola += "Máximo de particiones creadas";
+        *consola += "Máximo de particiones creadas\n";
         crear = false;
     }
     
@@ -584,7 +585,7 @@ func addParticion(path string, size int,unit rune,nombre string,consola *string)
                 fin =helpers.ByteArrayToInt64(aux[i+1].Part_start[:])
             }
             if ((fin-helpers.ByteArrayToInt64(aux[i].Part_start[:]))>=res){//Si lo puede guardar
-                vacio := make([]byte,10)
+                vacio := make([]byte,5)
 				copy(aux[i].Part_size[:],vacio);
 				copy(aux[i].Part_size[:],helpers.IntToByteArray(int64(res)));
                 guardar = true;
@@ -729,7 +730,7 @@ func montarPart(ruta string,name string)string{
         }
     }	
 	if encontrado{
-		letra := rune(i+97)
+		letra := rune(i+96)
 		id:= "24"+strconv.Itoa(i)
 		id += string(letra)
 		partMontada := estructuras.Pmontada{}
@@ -784,7 +785,7 @@ func Mkfs(parametros []string) string{
 			cant++
 		}else if strings.Contains(parametro,"type="){
 			tipo = strings.Replace(parametro,"type=","",1)
-			if tipo != "full"{
+			if tipo != "full" && tipo!="fast"{
 				cant = -1
 				return "Tipo de formateo no válido\n"
 			}
@@ -848,17 +849,22 @@ func formatear(id string,tipo string) string{
 	}
 	if encontrado{
 		//Limpiado
-		ceros := make([]byte,1)
-		puntero ,err := disco.Seek(int64(helpers.ByteArrayToInt64(aux[i].Part_start[:])),io.SeekStart)
+		fin := helpers.ByteArrayToInt64(aux[i].Part_size[:])
+		iniciar:= helpers.ByteArrayToInt64(aux[i].Part_start[:])
+		if tipo=="fast"{
+			super := helpers.ReadSuperBlock(disco,iniciar)
+			if string(super.S_magic[:]) == "EF53"{
+			iniciar = helpers.ByteArrayToInt64(super.S_bm_inode_start[:])
+			fin = helpers.ByteArrayToInt64(super.S_inode_start[:]) - iniciar
+			}
+		}
+		ceros := make([]byte,fin)
+		puntero ,err := disco.Seek(iniciar,io.SeekStart)
 		if err!=nil{
 			msg_error(err)
 		}
-		j := int64(0)
-		fin := helpers.ByteArrayToInt64(aux[i].Part_size[:])
-		for j!= fin{
-			disco.WriteAt(ceros,puntero)
-			j++
-		}
+		disco.WriteAt(ceros,puntero)
+		
 		//Cantidad de archivos
 		inicio := helpers.ByteArrayToInt64(aux[i].Part_start[:])
 		tamanioParticion := helpers.ByteArrayToInt64(aux[i].Part_size[:])
@@ -1350,15 +1356,18 @@ func MkRmusr(parametros []string,remover bool) string{
 		parametro := strings.ToLower(parametros[i])
 		if strings.Contains(parametro,"usuario="){
 			user = strings.Split(parametros[i],"=")[1]
+			user = strings.ReplaceAll(user,"\"","")
 			cant++
 			if len(user)>10{cant--;consola+="Error: Carácteres de usuario mayor que 10\n"}
 		}else if strings.Contains(parametro,"pwd=") && !remover{
 			pwd = strings.Split(parametros[i],"=")[1]
+			pwd = strings.ReplaceAll(pwd,"\"","")
 			cant++
 			if len(pwd)>10{cant--; consola+="Error: Carácteres de usuario mayor que 10\n"}
 
 		}else if strings.Contains(parametro,"grp=") && !remover{
 			grp = strings.Split(parametros[i],"=")[1]
+			grp = strings.ReplaceAll(grp,"\"","")
 			cant++
 			if len(grp)>10{cant--; consola+="Error: Carácteres de usuario mayor que 10\n"}
 			
@@ -1504,6 +1513,7 @@ func Rep(parametros []string)string{
 		}else{
 				switch nombre {
 			case "disk":
+				consola += repDisk(id)
 			case "tree":
 			case "file":
 				consola += repFile(id,ruta)
@@ -1565,6 +1575,60 @@ func repSb(id string)string{
     grafo +="<TR><TD>s_block_start</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_block_start[:])))+"</TD></TR>";
     grafo += "</TABLE>>];\n}";
 	RepSB = strings.Replace(grafo, "\x00", "", -1)
+	consola += "Reporte Creado"
+	return consola
+}
+func repDisk(id string)string{
+	consola := "==========ReporteDISK==========\n"
+	part := estructuras.Pmontada{}
+	consola += getParticionMontada(id,&part)
+	if strings.Contains(consola,"no encontrada"){return consola}
+	mbr := estructuras.MBR{}
+	aux := [4]estructuras.Particion{}
+	obtenerMBR(part.Path,&mbr,&aux)	
+    grafo := "digraph tabla{\n";
+    grafo += "abc [shape=none, margin=0, label=<\n";
+    grafo += "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n";
+    grafo +="<TR>";
+	comienza := float64(helpers.HandleSizeof(mbr))
+	sizeMBR :=helpers.ByteArrayToFloat64(mbr.Mbr_tamano[:])
+    x := (comienza*100)/sizeMBR
+	s := fmt.Sprintf("%v", helpers.ToFixed(x,5))
+    grafo +="<TD>MBR<br></br>"+s+"%</TD>"
+    
+    for i := 0; i < 4; i++{
+		partSize := helpers.ByteArrayToFloat64(aux[i].Part_size[:])
+		partInit := helpers.ByteArrayToFloat64(aux[i].Part_start[:]) 
+        espacio := partInit- comienza
+        if(espacio>=0){
+            tipo := ""
+            if (aux[i].Part_type[0]=='P'){
+                tipo = "Primaria"
+            }else if (aux[i].Part_type[0]=='E'){
+                tipo = "Extendida"
+            }else{
+                tipo ="Logica"
+            }
+			porcentaje:= partSize*100/sizeMBR
+			s = fmt.Sprintf("%v", helpers.ToFixed(porcentaje,5))
+            grafo +="<TD>"+tipo+"<br></br>"+s+"%</TD>"
+            
+        comienza = partInit+partSize
+        }
+    }
+
+    if (comienza==0){comienza = float64(helpers.HandleSizeof(mbr))}
+
+    espacio := sizeMBR - comienza;
+    if (espacio>0){
+		porcentaje:= espacio*100/sizeMBR
+		s = fmt.Sprintf("%v", helpers.ToFixed(porcentaje,4))
+        grafo +="<TD>Libre<br></br>"+s+"%</TD>";
+
+    }
+    grafo += "</TR>";    
+    grafo += "</TABLE>>];\n}";
+	RepDisk = strings.Replace(grafo, "\x00", "", -1)
 	consola += "Reporte Creado"
 	return consola
 }
