@@ -2,6 +2,7 @@ package main
 
 import (
 	"MIA-Proyecto2_202004724/analizador"
+	"MIA-Proyecto2_202004724/comando"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -23,8 +24,26 @@ func enableCors(w *http.ResponseWriter){
 func main(){
 	http.HandleFunc("/Ejecutar",Analizar)
 	http.HandleFunc("/Login",LogIn)
+	http.HandleFunc("/File",File)
+	http.HandleFunc("/SB",SB)
 	fmt.Println("Servidor en puerto 5000!")
 	log.Fatal(http.ListenAndServe(":5000",nil))
+}
+func File(w http.ResponseWriter, r *http.Request){
+	enableCors(&w)
+	w.WriteHeader(http.StatusAccepted)
+
+	w.Header().Set("Content-Type","application/json")
+	c := comando.RepFile
+	json.NewEncoder(w).Encode(Contenido{Entrada:"",Consola:c})
+}
+func SB(w http.ResponseWriter, r *http.Request){
+	enableCors(&w)
+	w.WriteHeader(http.StatusAccepted)
+
+	w.Header().Set("Content-Type","application/json")
+	c := comando.RepSB
+	json.NewEncoder(w).Encode(Contenido{Entrada:"",Consola:c})
 }
 func LogIn(w http.ResponseWriter, r *http.Request){
 	enableCors(&w)

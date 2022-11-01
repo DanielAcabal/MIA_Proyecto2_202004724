@@ -19,6 +19,8 @@ var particionesMontadas = list.New()
 var particionActual = estructuras.Pmontada{}
 var usuarioActual = estructuras.Usuario{}
 var sesionInicida = false
+var RepFile = "digraph{\"RepFile\"}"
+var RepSB = "digraph{\"RepSB\"}"
 /*======================MKDISK=======================*/
 func Mkdisk(commandArray []string) string{
 	//mkdisk -Size=3000 -unit=K -path=/home/user/Disco4.dk
@@ -831,6 +833,7 @@ func formatear(id string,tipo string) string{
 	particion := estructuras.Pmontada{}
 	consola := "=====Formateando partición "+id+"=====\n"
 	consola += getParticionMontada(id,&particion)
+	if strings.Contains(consola,"no encontrada"){return consola}
 	mbr := estructuras.MBR{}
 	aux := [4]estructuras.Particion{}
 	disco := obtenerMBR(particion.Path,&mbr,&aux)	
@@ -1221,7 +1224,7 @@ func MkRmgrp(parametros []string,remover bool) string{
 	if remover{consola = "==========RMGRP==========\n"}
 	cant := 0
 	nombreGrupo := ""
-	if !sesionInicida{ return consola + "Debe iniciar sesión"}
+	if !sesionInicida{ return consola + "Error: Debe iniciar sesión"}
 	for i := 1; i < len(parametros); i++ {
 		parametro := strings.ToLower(parametros[i])
 		if strings.Contains(parametro,"name="){
@@ -1338,6 +1341,7 @@ func removerGrupo(nombreGrupo string) string{
 func MkRmusr(parametros []string,remover bool) string{
 	consola := "==========MKUSR==========\n"
 	if remover{consola = "==========RMUSR==========\n"}
+	if !sesionInicida{ return consola + "Error: Debe iniciar sesión"}
 	cant := 0
 	user :=""
 	pwd := ""
@@ -1466,5 +1470,101 @@ func removerUsuario(user string)string{
 		consola+="Usuario "+user+" eliminado con éxito"
 	}
 	disco.Close()
+	return consola
+}
+func Rep(parametros []string)string{
+	consola := "==========REP==========\n"
+	cant:=0
+	nombre := ""
+	ruta :=""
+	id :=""
+	path :=""
+	for i := 1; i < len(parametros); i++ {
+		parametro := strings.ToLower(parametros[i])
+		if strings.Contains(parametro,"name="){
+			nombre = strings.Replace(parametro,"name=","",1)
+			cant++
+		}else if strings.Contains(parametro,"path="){
+			path = strings.Replace(parametro,"path=","",1)
+			path = strings.ReplaceAll(path,"\"","")
+			cant++
+		}else if strings.Contains(parametro,"id="){
+			id = strings.Replace(parametro,"id=","",1)
+			cant++
+		}else if strings.Contains(parametro,"ruta="){
+			ruta = strings.Replace(parametro,"ruta=","",1)
+			ruta = strings.ReplaceAll(ruta,"\"","")
+		}else{
+			consola += "Error: Parámetro "+parametro+" no válido\n"
+			cant = -1
+		}
+	}
+	if cant==3{
+		if nombre == "file" && ruta ==""{consola += "Error: Falta parámetro ruta para reporte File\n"
+		}else{
+				switch nombre {
+			case "disk":
+			case "tree":
+			case "file":
+				consola += repFile(id,ruta)
+			case "sb":
+				consola += repSb(id)
+			default:
+				consola += "Error: Reporte "+nombre+" no existe \n"
+			}
+		}
+	}else{
+		consola += "Error: Cantidad de parámetros obligatorios no válida"
+	}
+	return consola
+}
+func repFile(id string,ruta string)string{
+	consola := "==========Reporte File==========\n"
+	part := estructuras.Pmontada{}
+	consola += getParticionMontada(id,&part)
+	if strings.Contains(consola,"no encontrada"){return consola}
+	disco,e := os.OpenFile(part.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
+	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(part.Particion.Part_start[:]))
+	carpetas := strings.Split(ruta,"/")
+	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+ruta+"\n"}
+	inodo := helpers.ReadInode(disco,int64(pos))
+	contenido := contenidoArchivo(inodo,&superBloque,disco)
+	RepFile = "digraph File{node[shape=\"rectangle\"]; \"file\"[label = \""+ruta+"\n"+contenido+" \"] \"Reporte File\"	rankdir = LR}"
+	RepFile = strings.ReplaceAll(RepFile,"\n","\\n")
+	RepFile = strings.Replace(RepFile, "\x00", "", -1)
+	consola += "Reporte Creado"
+	return consola
+}
+func repSb(id string)string{
+	consola := "==========ReporteSB==========\n"
+	part := estructuras.Pmontada{}
+	consola += getParticionMontada(id,&part)
+	if strings.Contains(consola,"no encontrada"){return consola}
+	disco,e := os.OpenFile(part.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
+	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(part.Particion.Part_start[:]))
+    grafo := "digraph tabla{\n";
+    grafo += "abc [shape=none, margin=0, label=<\n";
+    grafo += "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n";
+    grafo +="<TR><TD colspan=\"2\">Reporte SuperBloque</TD></TR>";
+    grafo +="<TR><TD>s_filesystem_type</TD><TD>"+string(superBloque.S_filesystem_type[:])+"</TD></TR>";
+    grafo +="<TR><TD>s_inodes_count</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_inodes_count[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_blocks_count</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_blocks_count[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_free_blocks_count</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_free_blocks_count[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_free_inodes_count</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_free_inodes_count[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_mtime</TD><TD>"+string(superBloque.S_mtime[:])+"</TD></TR>";
+    grafo +="<TR><TD>s_mnt_count</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_mnt_count[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_magic</TD><TD>"+string(superBloque.S_magic[:])+"</TD></TR>";
+    grafo +="<TR><TD>s_inode_s</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_inode_size[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_block_s</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_block_size[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_firts_ino</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_firts_ino[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_first_blo</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_first_blo[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_bm_inode_start</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_bm_inode_start[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_bm_block_start</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_bm_block_start[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_inode_start</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_inode_start[:])))+"</TD></TR>";
+    grafo +="<TR><TD>s_block_start</TD><TD>"+strconv.Itoa(int(helpers.ByteArrayToInt64(superBloque.S_block_start[:])))+"</TD></TR>";
+    grafo += "</TABLE>>];\n}";
+	RepSB = strings.Replace(grafo, "\x00", "", -1)
+	consola += "Reporte Creado"
 	return consola
 }
