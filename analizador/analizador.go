@@ -74,6 +74,10 @@ func execComand(command []string,consola *string){
 		*consola += comando.MkRmgrp(command,false)
 	case "rmgrp":
 		*consola += comando.MkRmgrp(command,true)
+	case "mkusr":
+		*consola += comando.MkRmusr(command,false)
+	case "rmusr":
+		*consola += comando.MkRmusr(command,true)
 	default:
 		*consola += "Error: No existe el comando" + command[0]
 	}

@@ -1108,7 +1108,15 @@ func iniciarSesion(id string,user string, password string) string{
 	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
-	consola += buscarUsuario(contenido,id,user,password)
+	encontrado,index,init := buscarUsuario(contenido,user,password,true)
+	index++;init++; // No se usan xd, para que no del error ;v
+	if encontrado{
+		sesionInicida = true
+		usuarioActual.Id = id
+		usuarioActual.User = user
+		usuarioActual.Password = password
+		consola += "Ingreso exitoso"
+	}else{consola += "Error: El usuario"+ user+" no existe"}
 	disco.Close()
 	return consola
 }
@@ -1154,28 +1162,26 @@ func contenidoArchivo(inodo estructuras.Inodo,super *estructuras.SuperBloque, di
 	}
 	return contenido
 }
-func buscarUsuario(contenido string,id string,user string, password string) string{
+func buscarUsuario(contenido string, user string, password string, comprobar bool) (bool,int,int){
 	registros := strings.Split(contenido,"\n")
-	encontrado := false
-	for i := 0; i < len(registros); i++ {
+	offset := 0
+	index := 0
+	for i := 0; i < len(registros)-1; i++ {
 		datos := strings.Split(registros[i],",")
 		if datos[0]!="0"{
+			x,e:= strconv.Atoi(datos[0]); if e!=nil{msg_error(e)}
+			if x>index{index = x}
 			if datos[1]=="U"{
-				if datos[2] == user && datos[4] == password{
-					encontrado = true
-					break
+				if datos[2] == user && !comprobar{
+					return true,index,offset
+				}else if datos[2] == user && datos[4] == password{
+					return true,index,offset
 				}
 			}
 		}
+		offset += len(registros[i])+1
 	}
-	if encontrado{
-		sesionInicida = true
-		usuarioActual.Id = id
-		usuarioActual.User = user
-		usuarioActual.Password = password
-		return "Ingreso exitoso"
-	}
-	return "Error: Usuario "+user+" no encontrado"
+	return false,index,offset
 }
 func buscarGrupo(contenido string,grupo string) (bool,int,int){
 	registros := strings.Split(contenido,"\n")
@@ -1219,7 +1225,7 @@ func MkRmgrp(parametros []string,remover bool) string{
 	for i := 1; i < len(parametros); i++ {
 		parametro := strings.ToLower(parametros[i])
 		if strings.Contains(parametro,"name="){
-			nombreGrupo = strings.Replace(parametro,"name=","",1)
+			nombreGrupo = strings.Split(parametros[i],"=")[1]
 			nombreGrupo = strings.ReplaceAll(nombreGrupo,"\"","")
 			cant++
 			if len(nombreGrupo)>10{cant--; consola += "Error: El nombre de grupo es mayor que 10\n"}
@@ -1325,6 +1331,139 @@ func removerGrupo(nombreGrupo string) string{
 		puntero,e:= disco.Seek(inicioBloque+int64(directo)*sizeB,io.SeekStart); if e!=nil{msg_error(e)}
 		disco.WriteAt(Struct_to_bytes(bloque),puntero)
 		consola+="Grupo "+nombreGrupo+" eliminado con éxito"
+	}
+	disco.Close()
+	return consola
+}
+func MkRmusr(parametros []string,remover bool) string{
+	consola := "==========MKUSR==========\n"
+	if remover{consola = "==========RMUSR==========\n"}
+	cant := 0
+	user :=""
+	pwd := ""
+	grp := ""
+	for i := 1; i < len(parametros); i++ {
+		parametro := strings.ToLower(parametros[i])
+		if strings.Contains(parametro,"usuario="){
+			user = strings.Split(parametros[i],"=")[1]
+			cant++
+			if len(user)>10{cant--;consola+="Error: Carácteres de usuario mayor que 10\n"}
+		}else if strings.Contains(parametro,"pwd=") && !remover{
+			pwd = strings.Split(parametros[i],"=")[1]
+			cant++
+			if len(pwd)>10{cant--; consola+="Error: Carácteres de usuario mayor que 10\n"}
+
+		}else if strings.Contains(parametro,"grp=") && !remover{
+			grp = strings.Split(parametros[i],"=")[1]
+			cant++
+			if len(grp)>10{cant--; consola+="Error: Carácteres de usuario mayor que 10\n"}
+			
+		}else{
+			consola += "Parámetro "+parametro+" no válido\n"
+		}
+	}
+	if cant==3 && !remover{
+		if usuarioActual.User != "root"{
+			consola += "Error: Debe ser usuario root\n"
+		}else{
+			consola += crearUsuario(user,pwd,grp)
+		}
+	}else if cant==1 && remover{
+		if usuarioActual.User != "root"{
+			consola += "Error: Debe ser usuario root\n"
+		}else{
+			consola += removerUsuario(user)
+		}
+	}else{
+		consola += "Error: Cantidad de parámetros no válidos"
+	}
+	return consola
+}
+func crearUsuario(user string,pwd string,grp string) string{
+	consola := "==========CREANDO USUARIO==========\n"
+	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
+	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
+	carpetas := strings.Split("/users.txt","/")
+	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
+	inodo := helpers.ReadInode(disco,int64(pos))
+	contenido := contenidoArchivo(inodo,&superBloque,disco)
+	existegrp,indexgrp,initgrp:= buscarGrupo(contenido,grp)
+	indexgrp++;initgrp++
+	if !existegrp{ consola +="Error: El grupo "+grp+" no existe\n"
+	}else{
+	existeuser,indexuser,inituser:= buscarUsuario(contenido,user,pwd,false)
+	inituser++
+	if existeuser{ consola += "Error: El usuario "+user+" ya existe\n"
+		}else{
+		data := strconv.Itoa(indexuser+1)+",U,"+user+","+grp+","+pwd+"\n"
+		sizeInodo := helpers.ByteArrayToInt64(inodo.I_size[:])
+		offset := sizeInodo%64
+		directo := sizeInodo/64
+		inicio := helpers.ByteArrayToInt64(superBloque.S_block_start[:])
+		size := helpers.ByteArrayToInt64(superBloque.S_block_size[:])
+		bit,e:= strconv.ParseInt(string(inodo.I_block[directo]),36,64);if e!=nil{msg_error(e)		}
+		bloque := helpers.ReadFileBlock(disco,bit*size+inicio)
+		copy(bloque.B_content[offset:],data)
+		sizeData :=int64(len(data))
+		sizeInodo+=sizeData
+		copy(inodo.I_size[:],helpers.IntToByteArray(sizeInodo))
+		puntero,e:= disco.Seek(bit*size+inicio,io.SeekStart);if e!=nil{msg_error(e)}
+		disco.WriteAt(Struct_to_bytes(bloque),puntero)
+		
+		sobrante:=  64-(offset+sizeData)
+		if sobrante<0{
+			nuevoBloque := estructuras.BloqueArchivos{}
+			copy(nuevoBloque.B_content[:],[]byte(data)[(sizeData+sobrante):])
+			InicioBitmapBloque := helpers.ByteArrayToInt64(superBloque.S_bm_block_start[:])
+			BloqueLibreBM  := helpers.ByteArrayToInt64(superBloque.S_first_blo[:])
+			BloqueLibre := helpers.ByteArrayToInt64(superBloque.S_block_start[:])+helpers.ByteArrayToInt64(superBloque.S_block_size[:])*(BloqueLibreBM)
+			
+			//Actualizar bitmap, primer libre y cantidad libre
+			actualizarBitmapBloque(disco,helpers.ByteArrayToInt64(superBloque.S_blocks_count[:]),InicioBitmapBloque,&superBloque)
+			nuevoCantBloqueLibre := helpers.ByteArrayToInt64(superBloque.S_free_blocks_count[:]) - 1
+			copy(superBloque.S_free_blocks_count[:],helpers.IntToByteArray(nuevoCantBloqueLibre))
+			
+			inodo.I_block[directo+1] = helpers.IntToByteArray(BloqueLibreBM)[0]
+
+			puntero,e= disco.Seek(BloqueLibre,io.SeekStart);if e!=nil{msg_error(e)}
+			disco.WriteAt(Struct_to_bytes(nuevoBloque),puntero)
+
+			puntero,e= disco.Seek(helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]),io.SeekStart);if e!=nil{msg_error(e)}
+			disco.WriteAt(Struct_to_bytes(superBloque),puntero)
+		}
+		puntero,e= disco.Seek(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),io.SeekStart);if e!=nil{msg_error(e)}
+		disco.WriteAt(Struct_to_bytes(inodo),puntero)
+		consola += "Usuario "+user+" creado con éxito"
+		}
+	}
+	return consola
+}
+func removerUsuario(user string)string{
+	consola := "==========REMOVIENDO USUARIO==========\n"
+	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
+	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
+	carpetas := strings.Split("/users.txt","/")
+	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
+	inodo := helpers.ReadInode(disco,int64(pos))
+	contenido := contenidoArchivo(inodo,&superBloque,disco)
+	fmt.Println(len(contenido))
+	existe,index,init:= buscarUsuario(contenido,user,"",false)
+	index++ // no se usa xd
+	if !existe{
+		consola += "El usuario "+ user+" no existe"
+	}else{
+		offset := init%64
+		pos := init/64
+		directo,e:= strconv.ParseInt(string(inodo.I_block[pos]),36,64);if e!=nil{msg_error(e)}
+		sizeB := helpers.ByteArrayToInt64(superBloque.S_block_size[:])
+		inicioBloque := helpers.ByteArrayToInt64(superBloque.S_block_start[:])
+		bloque := helpers.ReadFileBlock(disco,inicioBloque+int64(directo)*sizeB)
+		bloque.B_content[offset] = '0'
+		puntero,e:= disco.Seek(inicioBloque+int64(directo)*sizeB,io.SeekStart); if e!=nil{msg_error(e)}
+		disco.WriteAt(Struct_to_bytes(bloque),puntero)
+		consola+="Usuario "+user+" eliminado con éxito"
 	}
 	disco.Close()
 	return consola
