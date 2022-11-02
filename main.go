@@ -27,8 +27,17 @@ func main(){
 	http.HandleFunc("/File",File)
 	http.HandleFunc("/SB",SB)
 	http.HandleFunc("/Disk",Disk)
+	http.HandleFunc("/Tree",Tree)
 	fmt.Println("Servidor en puerto 5000!")
 	log.Fatal(http.ListenAndServe(":5000",nil))
+}
+func Tree(w http.ResponseWriter, r *http.Request){
+	enableCors(&w)
+	w.WriteHeader(http.StatusAccepted)
+	w.Header().Set("Content-Type","application/json")
+	c := comando.RepArbol
+	//fmt.Println(c)
+	json.NewEncoder(w).Encode(Contenido{Entrada:"",Consola:c})
 }
 func File(w http.ResponseWriter, r *http.Request){
 	enableCors(&w)

@@ -22,6 +22,7 @@ var sesionInicida = false
 var RepFile = "digraph{\"RepFile\"}"
 var RepSB = "digraph{\"RepSB\"}"
 var RepDisk = "digraph{\"RepDisk\"}"
+var RepArbol= "digraph{\"RepArbol\"}"
 /*======================MKDISK=======================*/
 func Mkdisk(commandArray []string) string{
 	//mkdisk -Size=3000 -unit=K -path=/home/user/Disco4.dk
@@ -171,6 +172,7 @@ func Rmdisk(commandArray []string) string{
 		consola += "File does not exist\n"
 		return consola
 	 }
+	consola += "¿Quiere elimiar el disco?"
 	consola += "Disco eliminado\n"
 	return consola
 }
@@ -730,10 +732,13 @@ func montarPart(ruta string,name string)string{
         }
     }	
 	if encontrado{
-		letra := rune(i+96)
+		letra := rune(i+97)
 		id:= "24"+strconv.Itoa(i)
 		id += string(letra)
 		partMontada := estructuras.Pmontada{}
+		x:=getParticionMontada(id,&partMontada)
+		if !strings.Contains(x,"no encontrada"){return consola + "La partición ya está mondata"}
+		partMontada = estructuras.Pmontada{}
 		aux[i].Part_status = [1]byte{'M'}
 		partMontada.Id = id
 		partMontada.Particion = *aux[i]
@@ -1520,6 +1525,7 @@ func Rep(parametros []string)string{
 			case "disk":
 				consola += repDisk(id)
 			case "tree":
+				consola += repTree(id)
 			case "file":
 				consola += repFile(id,ruta)
 			case "sb":
@@ -2014,4 +2020,129 @@ func nuevoBloqueArchivo(content []byte,disco *os.File,super *estructuras.SuperBl
 	disco.WriteAt(Struct_to_bytes(super),puntero)
 	puntero,e = disco.Seek(BloqueLibre,io.SeekStart); if e!=nil{msg_error(e)}
 	disco.WriteAt(Struct_to_bytes(archivoNuevo),puntero)
+}
+func repTree(id string)string{
+	consola := "==========ReporteTree==========\n"
+	part := estructuras.Pmontada{}
+	consola += getParticionMontada(id,&part)
+	if strings.Contains(consola,"no encontrada"){return consola}
+	disco,e := os.OpenFile(part.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
+	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(part.Particion.Part_start[:]))
+    grafo := ""
+    grafo +=    
+	`digraph g {
+		fontname="Helvetica,Arial,sans-serif"
+		node [fontname="Helvetica,Arial,sans-serif"]
+		edge [fontname="Helvetica,Arial,sans-serif"]
+		graph [
+		rankdir = "LR"
+		];
+		node [
+		fontsize = "16"
+		shape = "ellipse"
+		];
+		edge [];
+	`
+	inicio := helpers.ByteArrayToInt64(superBloque.S_inode_start[:])
+	
+	inodo := helpers.ReadInode(disco,inicio)
+	cad,dir,pos := grafoInodo(inodo,0,&superBloque,disco)
+	fmt.Printf(dir,pos)//Quitar
+	grafo += cad
+	disco.Close()
+	grafo += "}"
+	RepArbol = grafo
+	return consola
+}
+func grafoInodo(inodo estructuras.Inodo,apuntador int64,super *estructuras.SuperBloque,disco *os.File)(string,string,string){
+	inicioB := helpers.ByteArrayToInt64(super.S_block_start[:])
+	sizeB := helpers.ByteArrayToInt64(super.S_block_size[:])
+    grafo := ""
+    txt := strconv.Itoa(int(apuntador))
+    dir := "\"Inodo"+txt+"\""
+    pos := "<Inodo"+txt+">"
+    contenido :=""
+    contenido += "I_uid:"+strconv.Itoa(int(helpers.ByteArrayToInt64(inodo.I_uid[:])));
+    contenido += "|I_gid:"+strconv.Itoa(int(helpers.ByteArrayToInt64(inodo.I_gid[:])));
+    contenido += "|I_size:"+strconv.Itoa(int(helpers.ByteArrayToInt64(inodo.I_size[:])));
+    contenido += "|I_atime:"+strings.Replace(string(inodo.I_atime[:]), "\x00", "", -1);
+    contenido += "|I_ctime:"+strings.Replace(string(inodo.I_ctime[:]), "\x00", "", -1);
+    contenido += "|I_mtime:"+strings.Replace(string(inodo.I_mtime[:]), "\x00", "", -1);
+    contenido += "|I_type:"+string(inodo.I_type[:]);
+    apuntadores := ""
+    for i := 0; i < len(inodo.I_block); i++ {
+        aux := "Ap"+strconv.Itoa(i)+"Inodo"+txt+""
+        index := -1 
+        if inodo.I_block[i]!=[]byte{45}[0]{
+            x,e:= strconv.ParseInt(string(inodo.I_block[i]),36,64);if e!=nil{fmt.Print(e)}
+            index = int(x)
+        }
+        contenido += "|<"+aux+">Apuntador"+strconv.Itoa(i)+":"+strconv.Itoa(index);
+        if (index != -1){
+            cad,dir2,pos := "","\"Archivo1\"","File1"
+            if string(inodo.I_type[:])=="0"{
+                carpeta := helpers.ReadDirBlock(disco,inicioB+int64(index)*sizeB)
+                cad,dir2,pos = grafoBloqueCarpeta(carpeta,int64(index),super,disco)
+            }else{
+                arc := helpers.ReadFileBlock(disco,inicioB+int64(index)*sizeB)
+                cad,dir2,pos = grafoBloqueArchivo(arc,int64(index))
+            }
+            grafo += cad
+            apuntadores += dir+":"+aux+"->"+dir2+":"+pos
+        }
+    }
+    contenido += "|I_type:"+string(inodo.I_perm[:]);
+    grafo +=    dir+` [
+        label = "`+pos+`Inodo = `+txt+` | `+contenido+`"
+        shape = "record"
+        ];`
+    grafo += apuntadores
+    return grafo,dir,pos
+}
+func grafoBloqueArchivo(archivo estructuras.BloqueArchivos,apuntador int64)(string,string,string){
+    grafo := ""
+    txt := strconv.Itoa(int(apuntador))
+    dir := "\"Archivo"+txt+"\""
+    pos := "<File"+txt+">"
+    contenido := strings.Replace(string(archivo.B_content[:]), "\x00", "", -1)
+    grafo +=    dir+` [
+                    label = "`+pos+`Bloque Archivo = `+txt+` | `+contenido+`"
+                    shape = "record"
+                    ];`
+    return grafo,dir,pos
+}
+func grafoBloqueCarpeta(archivo estructuras.BloqueCarpeta,apuntador int64,super *estructuras.SuperBloque,disco *os.File)(string,string,string){
+    
+	inicioI := helpers.ByteArrayToInt64(super.S_inode_start[:])
+	sizeI := helpers.ByteArrayToInt64(super.S_inode_size[:])
+	grafo := ""
+    txt := strconv.Itoa(int(apuntador))
+    dir := "\"Carpeta"+txt+"\""
+    pos := "<Carpeta"+txt+">"
+
+    contenido :=""
+    apuntadores:= ""
+    for i := 0; i < len(archivo.B_content); i++ {
+        aux := "Apun"+strconv.Itoa(i)+"Inodo"+txt+""
+        directo := archivo.B_content[i]
+        name := strings.Replace(string(directo.B_name[:]), "\x00", "", -1)
+
+        index := -1 
+        if directo.B_inodo[0]!=[]byte{45}[0]{
+            index = int(helpers.ByteArrayToInt64(directo.B_inodo[:]))
+        }
+        contenido += "|<"+aux+"> B_name:"+name+" B_inodo"+strconv.Itoa(i)+":"+strconv.Itoa(index);
+        if index != -1 && name!="/" && name!="." && name !=".."{
+			inodo := helpers.ReadInode(disco,inicioI+int64(index)*sizeI)
+            cad,dir2,pos := grafoInodo(inodo,int64(index),super,disco)
+			grafo += cad
+            apuntadores += dir+":"+aux+"->"+dir2+":"+pos
+        }
+    }
+    grafo +=    dir+` [
+        label = "`+pos+`Bloque Carpeta = `+txt+` `+contenido+`"
+        shape = "record"
+        ];`
+    grafo += apuntadores
+    return grafo,dir,pos
 }

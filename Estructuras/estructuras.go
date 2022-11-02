@@ -107,5 +107,5 @@ type Usuario struct{
     Id string
     User string
     Password string
-    
+
 }
