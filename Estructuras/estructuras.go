@@ -56,9 +56,9 @@ type Inodo struct{
     I_uid [2]byte
     I_gid [2]byte
     I_size [4]byte
-    I_atime [8]byte
-    I_ctime [8]byte
-    I_mtime [8]byte
+    I_atime [10]byte
+    I_ctime [10]byte
+    I_mtime [10]byte
     I_block [16]byte
     I_type [1]byte
     I_perm [3]byte

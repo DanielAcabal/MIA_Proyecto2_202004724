@@ -746,6 +746,13 @@ func montarPart(ruta string,name string)string{
 		tiempo := time.Now()
 		partMontada.TiempoM = tiempo.String()
 		particionesMontadas.PushFront(partMontada)
+		inicio := helpers.ByteArrayToInt64(aux[i].Part_start[:])
+		super := helpers.ReadSuperBlock(disco,inicio)
+		cant := helpers.ByteArrayToInt64(super.S_blocks_count[:])
+		cant++
+		copy(super.S_mnt_count[:],helpers.IntToByteArray(cant))
+		puntero,r:=disco.Seek(inicio,io.SeekStart); if r!=nil{msg_error(r)}
+		disco.WriteAt(Struct_to_bytes(super),puntero)
 		consola += "Partición "+name+" montada, id: "+id
 	}else{
 		consola += "Partición "+name+" no encontrada\n"		
@@ -1965,7 +1972,7 @@ func nuevoInodoArchivo(contenido []byte,disco *os.File,super *estructuras.SuperB
 	InodoLibre := helpers.ByteArrayToInt64(super.S_inode_start[:])+helpers.ByteArrayToInt64(super.S_inode_size[:])*InodoLibreBM
 	//Crear el Inodo
 	inodo := estructuras.Inodo{}
-	estructuras.NuevoInodo(&inodo,1,1,int64(len(contenido)),"1","777")
+	estructuras.NuevoInodo(&inodo,1,1,int64(len(contenido)),"1","664")
 	//Actualizar bitmap, primer libre y cantidad libre
 	actualizarBitmapInodo(disco,helpers.ByteArrayToInt64(super.S_inodes_count[:]),InicioBitmapInodo,super)
 	nuevoCantInodoLibre := helpers.ByteArrayToInt64(super.S_free_inodes_count[:]) - 1
@@ -2052,6 +2059,7 @@ func repTree(id string)string{
 	disco.Close()
 	grafo += "}"
 	RepArbol = grafo
+	consola += "Reporte tree creado"
 	return consola
 }
 func grafoInodo(inodo estructuras.Inodo,apuntador int64,super *estructuras.SuperBloque,disco *os.File)(string,string,string){
@@ -2091,7 +2099,7 @@ func grafoInodo(inodo estructuras.Inodo,apuntador int64,super *estructuras.Super
             apuntadores += dir+":"+aux+"->"+dir2+":"+pos
         }
     }
-    contenido += "|I_type:"+string(inodo.I_perm[:]);
+    contenido += "|I_perm:"+string(inodo.I_perm[:]);
     grafo +=    dir+` [
         label = "`+pos+`Inodo = `+txt+` | `+contenido+`"
         shape = "record"
