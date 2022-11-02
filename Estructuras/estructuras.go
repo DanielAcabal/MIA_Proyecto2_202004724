@@ -14,8 +14,8 @@ type Particion struct{
     Part_status [1]byte
     Part_type [1]byte
     Part_fit [2]byte
-    Part_start [5]byte
-    Part_size [5]byte
+    Part_start [8]byte
+    Part_size [8]byte
     Part_name [15]byte
 }
 type MBR struct{
@@ -36,21 +36,21 @@ type Pmontada struct{
 }
 type SuperBloque struct{
     S_filesystem_type [1]byte
-    S_inodes_count [4]byte    //Int->[]
-    S_blocks_count [4]byte   //Int->[]
-    S_free_blocks_count [4]byte
-    S_free_inodes_count [4]byte
+    S_inodes_count [6]byte    //Int->[]
+    S_blocks_count [6]byte   //Int->[]
+    S_free_blocks_count [6]byte
+    S_free_inodes_count [6]byte
     S_mtime [30]byte
     S_mnt_count [1]byte
     S_magic [4]byte
     S_inode_size [4]byte
     S_block_size [4]byte
-    S_firts_ino [4]byte
-    S_first_blo [4]byte
-    S_bm_inode_start [4]byte  //Into->[]
-    S_bm_block_start [4]byte //Int->[]
-    S_inode_start [4]byte
-    S_block_start [4]byte
+    S_firts_ino [6]byte
+    S_first_blo [6]byte
+    S_bm_inode_start [8]byte  //Into->[]
+    S_bm_block_start [8]byte //Int->[]
+    S_inode_start [8]byte
+    S_block_start [8]byte
 }
 type Inodo struct{
     I_uid [2]byte
@@ -107,4 +107,5 @@ type Usuario struct{
     Id string
     User string
     Password string
+    
 }

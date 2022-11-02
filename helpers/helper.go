@@ -131,6 +131,12 @@ func ReadFileBlock(disco *os.File,pos int64) estructuras.BloqueArchivos{
 	disco.ReadAt(data,puntero)
 	return ByteArrayToFileBlock(data)
 }
+func ReadDirBlock(disco *os.File,pos int64) estructuras.BloqueCarpeta{
+	data := make([]byte,HandleSizeof(estructuras.BloqueCarpeta{}))
+	puntero,e :=disco.Seek(pos,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.ReadAt(data,puntero)
+	return ByteArrayToDirBlock(data)
+}
 func ReadSuperBlock(disco *os.File,pos int64) estructuras.SuperBloque{
 	data := make([]byte,HandleSizeof(estructuras.SuperBloque{}))
 	puntero,e :=disco.Seek(pos,io.SeekStart); if e!=nil{msg_error(e)}

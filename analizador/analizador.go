@@ -80,6 +80,10 @@ func execComand(command []string,consola *string){
 		*consola += comando.MkRmusr(command,true)
 	case "rep":
 		*consola += comando.Rep(command)
+	case "mkfile":
+		*consola += comando.Mkfile(command)
+	case "mkdir":
+		*consola += comando.Mkdir(command)
 	default:
 		*consola += "Error: No existe el comando" + command[0]
 	}

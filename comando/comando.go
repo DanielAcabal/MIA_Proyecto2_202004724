@@ -585,7 +585,7 @@ func addParticion(path string, size int,unit rune,nombre string,consola *string)
                 fin =helpers.ByteArrayToInt64(aux[i+1].Part_start[:])
             }
             if ((fin-helpers.ByteArrayToInt64(aux[i].Part_start[:]))>=res){//Si lo puede guardar
-                vacio := make([]byte,5)
+                vacio := make([]byte,8)
 				copy(aux[i].Part_size[:],vacio);
 				copy(aux[i].Part_size[:],helpers.IntToByteArray(int64(res)));
                 guardar = true;
@@ -633,7 +633,7 @@ func eliminarParticion(path string, name string,consola *string){
     for  i = 0; i < 4; i++{
         if helpers.ByteArrayToInt64(aux[i].Part_start[:])!=0{
             p:= aux[i].Part_name[:];
-			aux := make([]byte,50)
+			aux := make([]byte,15)
 			copy(aux,name)
         	if bytes.Equal(p[:],aux[:]){
             encontrado =true;
@@ -1113,8 +1113,9 @@ func iniciarSesion(id string,user string, password string) string{
 	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
 	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
 	carpetas := strings.Split("/users.txt","/")
-	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
-	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
+	pos,fin := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{return consola +"Error: No se encontró el archivo/Directorio "+"/users.txt\n"}
+	if fin{fmt.Print()}//No se usa xd
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
 	encontrado,index,init := buscarUsuario(contenido,user,password,true)
@@ -1129,9 +1130,9 @@ func iniciarSesion(id string,user string, password string) string{
 	disco.Close()
 	return consola
 }
-func buscarArchivo(posInodo int64,super *estructuras.SuperBloque,disco *os.File, directorio []string,indice int) int{
+func buscarArchivo(posInodo int64,super *estructuras.SuperBloque,disco *os.File, directorio []string,indice int) (int,bool){
 	inodo := helpers.ReadInode(disco,posInodo)
-	if inodo.I_type[0] == '1' {return int(posInodo)}
+	if inodo.I_type[0] == '1' {return int(posInodo),(len(directorio)-1==indice)}
 	for i := 0; i < len(inodo.I_block); i++ {
 		directo := inodo.I_block[i]
 		if (directo != helpers.IntToByteArray(-1)[0]){
@@ -1142,10 +1143,10 @@ func buscarArchivo(posInodo int64,super *estructuras.SuperBloque,disco *os.File,
 			data := make([]byte,helpers.HandleSizeof(estructuras.BloqueCarpeta{}))
 			disco.ReadAt(data,puntero)
 			carpeta := helpers.ByteArrayToDirBlock(data)
+			nombre :=make([]byte,12)
+			copy(nombre,directorio[indice])
 			for j := 0; j < len(carpeta.B_content); j++ {
 				dir := carpeta.B_content[j]
-				nombre :=make([]byte,12)
-				copy(nombre,directorio[indice])
 				if bytes.Equal(dir.B_name[:],nombre){
 					bit := helpers.ByteArrayToInt64(dir.B_inodo[:])
 					inicio = helpers.ByteArrayToInt64(super.S_inode_start[:])
@@ -1155,7 +1156,7 @@ func buscarArchivo(posInodo int64,super *estructuras.SuperBloque,disco *os.File,
 			}
 		}
 	}
-	return -1
+	return -1,(len(directorio)-1==indice)
 }
 func contenidoArchivo(inodo estructuras.Inodo,super *estructuras.SuperBloque, disco *os.File) string{
 	contenido :=""
@@ -1262,8 +1263,9 @@ func crearGrupo(nombreGrupo string) string{
 	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
 	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
 	carpetas := strings.Split("/users.txt","/")
-	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
-	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
+	pos,fin := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{return consola +"Error: No se encontró el archivo/Directorio "+"/users.txt\n"}
+	if fin{fmt.Print()}
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
 	fmt.Println(len(contenido))
@@ -1307,7 +1309,7 @@ func crearGrupo(nombreGrupo string) string{
 			puntero,e= disco.Seek(helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]),io.SeekStart);if e!=nil{msg_error(e)}
 			disco.WriteAt(Struct_to_bytes(superBloque),puntero)
 		}
-		puntero,e= disco.Seek(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),io.SeekStart);if e!=nil{msg_error(e)}
+		puntero,e= disco.Seek(int64(pos),io.SeekStart);if e!=nil{msg_error(e)}
 		disco.WriteAt(Struct_to_bytes(inodo),puntero)
 		consola += "Grupo "+nombreGrupo+" creado con éxito"
 	}
@@ -1319,8 +1321,9 @@ func removerGrupo(nombreGrupo string) string{
 	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
 	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
 	carpetas := strings.Split("/users.txt","/")
-	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
-	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
+	pos, fin:= buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{return consola +"Error: No se encontró el archivo/Directorio "+"/users.txt\n"}
+	if fin{fmt.Print()}
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
 	fmt.Println(len(contenido))
@@ -1397,8 +1400,9 @@ func crearUsuario(user string,pwd string,grp string) string{
 	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
 	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
 	carpetas := strings.Split("/users.txt","/")
-	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
-	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
+	pos,fin := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{return consola +"Error: No se encontró el archivo/Directorio "+"/users.txt\n"}
+	if fin{fmt.Print()}
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
 	existegrp,indexgrp,initgrp:= buscarGrupo(contenido,grp)
@@ -1445,7 +1449,7 @@ func crearUsuario(user string,pwd string,grp string) string{
 			puntero,e= disco.Seek(helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]),io.SeekStart);if e!=nil{msg_error(e)}
 			disco.WriteAt(Struct_to_bytes(superBloque),puntero)
 		}
-		puntero,e= disco.Seek(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),io.SeekStart);if e!=nil{msg_error(e)}
+		puntero,e= disco.Seek(int64(pos),io.SeekStart);if e!=nil{msg_error(e)}
 		disco.WriteAt(Struct_to_bytes(inodo),puntero)
 		consola += "Usuario "+user+" creado con éxito"
 		}
@@ -1457,8 +1461,9 @@ func removerUsuario(user string)string{
 	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
 	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
 	carpetas := strings.Split("/users.txt","/")
-	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
-	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+"/users.txt\n"}
+	pos,fin := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{return consola +"Error: No se encontró el archivo/Directorio "+"/users.txt\n"}
+	if fin{fmt.Print()}
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
 	fmt.Println(len(contenido))
@@ -1536,8 +1541,9 @@ func repFile(id string,ruta string)string{
 	disco,e := os.OpenFile(part.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
 	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(part.Particion.Part_start[:]))
 	carpetas := strings.Split(ruta,"/")
-	pos := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
-	if pos == -1{consola +="Error: No se encontró el archivo/Directorio"+ruta+"\n"}
+	pos,fin := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{return consola +"Error: No se encontró el archivo/Directorio "+ruta+"\n"}
+	if fin{fmt.Print()}
 	inodo := helpers.ReadInode(disco,int64(pos))
 	contenido := contenidoArchivo(inodo,&superBloque,disco)
 	RepFile = "digraph File{node[shape=\"rectangle\"]; \"file\"[label = \""+ruta+"\n"+contenido+" \"] \"Reporte File\"	rankdir = LR}"
@@ -1631,4 +1637,381 @@ func repDisk(id string)string{
 	RepDisk = strings.Replace(grafo, "\x00", "", -1)
 	consola += "Reporte Creado"
 	return consola
+}
+func Mkfile(parametros []string)string{
+	consola := "==========MKFILE==========\n"
+	cant := 0
+	prioridad := 0
+	path,rec,size,cont := "",false,0,""
+	aux := 1
+	for i := 1; i < len(parametros); i++ {
+		parametro := strings.ToLower(parametros[i])
+		if strings.Contains(parametro,"path="){
+			path = strings.Split(parametros[i],"=")[1]
+			path = strings.ReplaceAll(path,"\"","")
+			cant++
+		}else if parametro=="r"{
+			rec = true
+		}else if strings.Contains(parametro,"size="){
+			num := strings.Replace(parametro,"size=","",1)
+			if strings.Contains(num,"~"){
+				aux = -1
+				num = strings.Replace(num,"~","",1)
+			}
+			x, e := strconv.Atoi(num); if e!=nil{msg_error(e)}
+			size = x*aux 
+			if size<0{consola += "Error: El tamaño no puede ser negativo\n"; cant=-3;
+			}else{ if prioridad<1 {prioridad = 1}}
+
+		}else if strings.Contains(parametro,"cont="){
+			cont = strings.Split(parametros[i],"=")[1]
+			cont = strings.ReplaceAll(cont,"\"","")
+			if prioridad<2 { prioridad =2}
+		}else{
+			consola += "Error: Parámetro "+parametro+" no válido\n"
+		}
+	}
+	if cant == 1{
+		if prioridad == 2{
+			contenido,e := os.ReadFile(cont); if e!=nil{msg_error(e); return consola + "El archivo no existe en la computadora"}
+			consola += crearArchivo(path,rec,-1,contenido)
+		}else{
+			consola += crearArchivo(path,rec,int64(size),[]byte{})
+	}
+	}else{
+		consola += "Error: Cantidad de parámetros obligatorios incorrecta"
+	}
+	return consola
+}
+func crearArchivo(path string,rec bool,size int64,cont []byte)string{ //1=size, 2 = cont
+	consola := ""
+	if !sesionInicida { return consola + "Error: Debe iniciar sesión"}
+	
+	//El usuario deberá tener el permiso de escritura en la carpeta padre, si no debe mostrar un error.
+	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
+	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
+	carpetas := strings.Split(path,"/")
+	pos,fin := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{
+		//Creamos
+		if !fin {
+			if rec{
+			//CrearCarpeta
+				consola += "==========CreandoCarpetasPadre==========\n"
+				//pos = int(nuevaCarpeta(disco,&superBloque,helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),carpetas[:len(carpetas)-1],1))	
+			}else{
+				return consola + "Error: Faltan carpetas padre"
+			}
+		}
+		//Creamos archivo
+		pos = int(nuevaCarpeta(disco,&superBloque,helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),carpetas[:len(carpetas)-1],1))	
+		consola += "==========CreandoArchivo=========\n"
+		nuevoArchivo(int64(pos),disco,&superBloque,carpetas[len(carpetas)-1],cont,int(size))
+		consola += "Archivo creado con éxito\n"
+	}else{
+		//Sobreescribir
+		consola +="==========Sobreescribir==========\n"
+
+	}
+	disco.Close()
+	return consola
+}
+
+func nuevaCarpeta(disco *os.File,super *estructuras.SuperBloque,posInodo int64,ruta []string,index int)int64{
+	if index == len(ruta){return posInodo}
+
+	inodo := helpers.ReadInode(disco,posInodo)
+	inicioB := helpers.ByteArrayToInt64(super.S_block_start[:])
+	sizeB := helpers.ByteArrayToInt64(super.S_block_size[:])
+	inicioI := helpers.ByteArrayToInt64(super.S_inode_start[:])
+	sizeI := helpers.ByteArrayToInt64(super.S_inode_size[:])
+
+	for i := 0; i < len(inodo.I_block); i++ {
+		directo := inodo.I_block[i]
+		if (directo != helpers.IntToByteArray(-1)[0]){ //Desplazar
+			x,e:= strconv.ParseInt(string(directo),36,64); if e!=nil{msg_error(e)}
+			carpeta := helpers.ReadDirBlock(disco,inicioB+x*sizeB)
+			nombre :=make([]byte,12)
+			copy(nombre,ruta[index])
+			for j := 0; j < len(carpeta.B_content); j++ {
+				dir := carpeta.B_content[j]
+				if dir.B_inodo[:][0]==helpers.IntToByteArray(-1)[0]{
+					//Guardamos el nombre y creamos inodo para apuntarlo
+					copy(carpeta.B_content[j].B_name[:],nombre)
+					InodoLibreBM := helpers.ByteArrayToInt64(super.S_firts_ino[:])
+					copy(carpeta.B_content[j].B_inodo[:],helpers.IntToByteArray(InodoLibreBM)) 
+					puntero,e :=disco.Seek(inicioB+x*sizeB,io.SeekStart);if e!=nil{msg_error(e)}
+					disco.WriteAt(Struct_to_bytes(carpeta),puntero)
+					nuevoInodoCarpeta(super,disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
+					return nuevaCarpeta(disco,super,InodoLibreBM*sizeI+inicioI,ruta,index+1)
+					
+				}
+				if bytes.Equal(dir.B_name[:],nombre){ // Si ya existe
+					bit := helpers.ByteArrayToInt64(dir.B_inodo[:])
+					return nuevaCarpeta(disco,super,bit*sizeI+inicioI,ruta,index+1)
+				}
+			}
+		}else{
+			InodoLibreBM := helpers.ByteArrayToInt64(super.S_firts_ino[:])
+			Inodo_libreI := helpers.ByteArrayToInt64(super.S_inode_start[:])+(InodoLibreBM)*helpers.ByteArrayToInt64(super.S_inode_size[:]);//posicion archivo del inodo libre
+
+			//Nuevo Bloque carpeta
+			IniciaBitmapBloque := super.S_bm_block_start[:]
+			PrimerBloqueLibre := helpers.ByteArrayToInt64(super.S_first_blo[:])
+			BloqueLibre := helpers.ByteArrayToInt64(super.S_block_start[:]) + helpers.ByteArrayToInt64(super.S_block_size[:])*(PrimerBloqueLibre)
+			
+			carpetaR := estructuras.BloqueCarpeta{}
+			estructuras.NuevoBloqueCarpeta(&carpetaR)//Constructor xd
+			// Los primeros 2 registros del primer apuntador directo del Inodo son la carpeta y carpeta padre
+			if (i==0){
+				copy(carpetaR.B_content[0].B_name[:],".")
+				copy(carpetaR.B_content[0].B_inodo[:],helpers.IntToByteArray(InodoLibreBM)) // Apuntan al inodo creado antes
+				copy(carpetaR.B_content[1].B_name[:],"..")
+				copy(carpetaR.B_content[1].B_inodo[:],helpers.IntToByteArray(InodoLibreBM))
+			}else{
+				copy(carpetaR.B_content[0].B_name[:],ruta[index])
+				copy(carpetaR.B_content[0].B_inodo[:],helpers.IntToByteArray(InodoLibreBM)) 
+			}
+			actualizarBitmapBloque(disco,helpers.ByteArrayToInt64(super.S_blocks_count[:]),
+								helpers.ByteArrayToInt64(IniciaBitmapBloque[:]),super)
+
+			nuevoBloqueLibre := helpers.ByteArrayToInt64(super.S_free_blocks_count[:])-1
+			copy(super.S_free_blocks_count[:],helpers.IntToByteArray(nuevoBloqueLibre))	
+			
+			//Guardamos estructuras
+			puntero,e:=disco.Seek(helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]),io.SeekStart)
+			if e!=nil{msg_error(e)}
+			disco.WriteAt(Struct_to_bytes(super),puntero)
+			inodo.I_block[i] = helpers.IntToByteArray(PrimerBloqueLibre)[0]
+			puntero,e=disco.Seek(posInodo,io.SeekStart)
+			if e!=nil{msg_error(e)}
+			disco.WriteAt(Struct_to_bytes(inodo),puntero)
+			puntero,e =disco.Seek(BloqueLibre,io.SeekStart)
+			if e!=nil{msg_error(e)}
+			disco.WriteAt(Struct_to_bytes(carpetaR),puntero)
+			nuevoInodoCarpeta(super,disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
+			return nuevaCarpeta(disco,super,Inodo_libreI,ruta,index+1)
+		}
+	}
+	return -1
+}
+func nuevoInodoCarpeta(super *estructuras.SuperBloque,disco *os.File,inicioPart int64){
+	IniciaBitmapInodo := super.S_bm_inode_start[:]
+	InodoLibreBM := helpers.ByteArrayToInt64(super.S_firts_ino[:])
+    Inodo_libreI := helpers.ByteArrayToInt64(super.S_inode_start[:])+(InodoLibreBM)*helpers.ByteArrayToInt64(super.S_inode_size[:]);//posicion archivo del inodo libre
+
+	inodoRaiz := estructuras.Inodo{}
+	estructuras.NuevoInodo(&inodoRaiz,1,1,0,"0","664")
+	//Actualizamos Bitmap, inodos libres, primer inodo libre
+	actualizarBitmapInodo(disco,helpers.ByteArrayToInt64(super.S_inodes_count[:]),helpers.ByteArrayToInt64(IniciaBitmapInodo),super)
+	nuevoLibre := helpers.ByteArrayToInt64(super.S_free_inodes_count[:])-1
+	copy(super.S_free_inodes_count[:],helpers.IntToByteArray(nuevoLibre))
+
+	// Bloque carpetaRaiz
+	IniciaBitmapBloque := super.S_bm_block_start[:]
+	PrimerBloqueLibre := helpers.ByteArrayToInt64(super.S_first_blo[:])
+	BloqueLibre := helpers.ByteArrayToInt64(super.S_block_start[:]) + helpers.ByteArrayToInt64(super.S_block_size[:])*(PrimerBloqueLibre)
+	
+	carpetaR := estructuras.BloqueCarpeta{}
+	estructuras.NuevoBloqueCarpeta(&carpetaR)//Constructor xd
+	// Los primeros 2 registros del primer apuntador directo del Inodo son la carpeta y carpeta padre
+	copy(carpetaR.B_content[0].B_name[:],".")
+	copy(carpetaR.B_content[0].B_inodo[:],helpers.IntToByteArray(InodoLibreBM)) // Apuntan al inodo creado antes
+	copy(carpetaR.B_content[1].B_name[:],"..")
+	copy(carpetaR.B_content[1].B_inodo[:],helpers.IntToByteArray(InodoLibreBM))
+	//Primer apuntador directo 
+	inodoRaiz.I_block[0] = helpers.IntToByteArray(PrimerBloqueLibre)[0]
+
+	actualizarBitmapBloque(disco,helpers.ByteArrayToInt64(super.S_blocks_count[:]),
+								helpers.ByteArrayToInt64(IniciaBitmapBloque[:]),super)
+
+	nuevoBloqueLibre := helpers.ByteArrayToInt64(super.S_free_blocks_count[:])-1
+	copy(super.S_free_blocks_count[:],helpers.IntToByteArray(nuevoBloqueLibre))	
+	
+	//Guardamos estructuras
+	puntero,e:=disco.Seek(inicioPart,io.SeekStart)
+	if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(super),puntero)
+
+
+	puntero,e =disco.Seek(Inodo_libreI,io.SeekStart)
+	if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(inodoRaiz),puntero)
+	
+	puntero,e =disco.Seek(BloqueLibre,io.SeekStart)
+	if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(carpetaR),puntero)
+}
+func Mkdir(parametros []string)string{
+	consola := "==========MKDIR==========\n"
+	cant := 0
+	path,p:= "",false
+	for i := 1; i < len(parametros); i++ {
+		parametro := strings.ToLower(parametros[i])
+		if strings.Contains(parametro,"path="){
+			path = strings.Split(parametros[i],"=")[1]
+			path = strings.ReplaceAll(path,"\"","")
+			cant++
+		}else if parametro == "p"{	
+			p = true
+		}else{
+			consola += "Error: Parámetro "+ parametro+" no válido\n"
+		}
+	}
+	if cant==1{
+		consola += crearCarpeta(path,p)
+	}else{
+		consola += "Error: Cantidad de parámetros obligatorios no válida"
+	}
+	return consola
+}
+func crearCarpeta(path string,p bool)string{
+	consola := ""
+	if !sesionInicida { return consola + "Error: Debe iniciar sesión"}
+	//El usuario deberá tener el permiso de escritura en la carpeta padre, si no debe mostrar un error.
+	disco,e := os.OpenFile(particionActual.Path,os.O_RDWR,0660); if e!=nil{msg_error(e)}
+	superBloque := helpers.ReadSuperBlock(disco,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]))
+	//ru := path+"/zz.x"
+	carpetas := strings.Split(path,"/")
+	pos,fin := buscarArchivo(helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),&superBloque,disco,carpetas,1)
+	if pos == -1{
+		//Creamos
+		if p{
+		//CrearCarpeta
+			consola += "==========Creando Carpetas y Padres==========\n"
+			i := nuevaCarpeta(disco,&superBloque,helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),carpetas,1)	
+			fmt.Print(i)
+			consola += "Carpetas Creadas: "+path
+		}else{
+			if fin{
+				consola += "==========Creando Carpeta==========\n"
+				nuevaCarpeta(disco,&superBloque,helpers.ByteArrayToInt64(superBloque.S_inode_start[:]),carpetas,1)	
+				consola += "Carpeta "+carpetas[len(carpetas)-1]+" creada"
+			}else{
+			consola += "Error: No hay carpetas padre"}
+		}
+	}else{consola += "Error: La carpeta ya existe"}
+	disco.Close()
+	return consola
+}
+func nuevoArchivo(posInodo int64,disco *os.File,super *estructuras.SuperBloque,nombre string,contenido []byte,size int){	
+	inodo := helpers.ReadInode(disco,posInodo)
+	inicioB := helpers.ByteArrayToInt64(super.S_block_start[:])
+	sizeB := helpers.ByteArrayToInt64(super.S_block_size[:])
+
+	for i := 0; i < len(inodo.I_block); i++ {
+		directo := inodo.I_block[i]
+		if (directo != helpers.IntToByteArray(-1)[0]){ //Desplazar
+			x,e:= strconv.ParseInt(string(directo),36,64); if e!=nil{msg_error(e)}
+			carpeta := helpers.ReadDirBlock(disco,inicioB+x*sizeB)
+			for j := 0; j < len(carpeta.B_content); j++ {
+				dir := carpeta.B_content[j]
+				if dir.B_inodo[:][0]==helpers.IntToByteArray(-1)[0]{
+					//Guardamos el nombre y creamos inodo para apuntarlo
+					copy(carpeta.B_content[j].B_name[:],nombre)
+					InodoLibreBM := helpers.ByteArrayToInt64(super.S_firts_ino[:])
+					copy(carpeta.B_content[j].B_inodo[:],helpers.IntToByteArray(InodoLibreBM)) 
+					puntero,e :=disco.Seek(inicioB+x*sizeB,io.SeekStart);if e!=nil{msg_error(e)}
+					disco.WriteAt(Struct_to_bytes(carpeta),puntero)
+					nuevoInodoArchivo(contenido,disco,super,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]),nombre,size)
+					return
+				}
+			}
+		}else{
+			//Nuevo inodoArchivo
+			InodoLibreBM  := helpers.ByteArrayToInt64(super.S_firts_ino[:])
+			//Nuevo Bloque carpeta
+			IniciaBitmapBloque := super.S_bm_block_start[:]
+			PrimerBloqueLibre := helpers.ByteArrayToInt64(super.S_first_blo[:])
+			BloqueLibre := helpers.ByteArrayToInt64(super.S_block_start[:]) + helpers.ByteArrayToInt64(super.S_block_size[:])*(PrimerBloqueLibre)
+			
+			carpetaR := estructuras.BloqueCarpeta{}
+			estructuras.NuevoBloqueCarpeta(&carpetaR)//Constructor xd
+			copy(carpetaR.B_content[0].B_name[:],nombre)
+			copy(carpetaR.B_content[0].B_inodo[:],helpers.IntToByteArray(InodoLibreBM)) 
+			actualizarBitmapBloque(disco,helpers.ByteArrayToInt64(super.S_blocks_count[:]),
+								helpers.ByteArrayToInt64(IniciaBitmapBloque[:]),super)
+
+			nuevoBloqueLibre := helpers.ByteArrayToInt64(super.S_free_blocks_count[:])-1
+			copy(super.S_free_blocks_count[:],helpers.IntToByteArray(nuevoBloqueLibre))	
+			
+			inodo.I_block[i] = helpers.IntToByteArray(PrimerBloqueLibre)[0]
+
+			//Guardamos estructuras
+			puntero,e:=disco.Seek(helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]),io.SeekStart)
+			if e!=nil{msg_error(e)}
+			disco.WriteAt(Struct_to_bytes(super),puntero)		
+			puntero,e = disco.Seek(posInodo,io.SeekStart); if e!=nil{msg_error(e)}
+			disco.WriteAt(Struct_to_bytes(inodo),puntero)
+			puntero,e =disco.Seek(BloqueLibre,io.SeekStart)
+			if e!=nil{msg_error(e)}
+			disco.WriteAt(Struct_to_bytes(carpetaR),puntero)
+			nuevoInodoArchivo(contenido,disco,super,helpers.ByteArrayToInt64(particionActual.Particion.Part_start[:]),nombre,size)
+			return 
+		}
+	}
+}
+func nuevoInodoArchivo(contenido []byte,disco *os.File,super *estructuras.SuperBloque,parinit int64,nombre string,size int){
+	if len(contenido)>1024{return}
+	//Nuevo inodoArchivo
+	InicioBitmapInodo := helpers.ByteArrayToInt64(super.S_bm_inode_start[:])
+	InodoLibreBM  := helpers.ByteArrayToInt64(super.S_firts_ino[:])
+	InodoLibre := helpers.ByteArrayToInt64(super.S_inode_start[:])+helpers.ByteArrayToInt64(super.S_inode_size[:])*InodoLibreBM
+	//Crear el Inodo
+	inodo := estructuras.Inodo{}
+	estructuras.NuevoInodo(&inodo,1,1,int64(len(contenido)),"1","777")
+	//Actualizar bitmap, primer libre y cantidad libre
+	actualizarBitmapInodo(disco,helpers.ByteArrayToInt64(super.S_inodes_count[:]),InicioBitmapInodo,super)
+	nuevoCantInodoLibre := helpers.ByteArrayToInt64(super.S_free_inodes_count[:]) - 1
+	copy(super.S_free_inodes_count[:],helpers.IntToByteArray(nuevoCantInodoLibre))
+    
+	//Calculando el contenido
+	veces := 0//
+	if size>0{
+		veces = size/64
+		//res = size%64
+		contenido = make([]byte, size)
+		for i := 0; i < size; i++ {
+			copy(contenido[i*10:],[]byte{48,49,50,51,52,53,54,55,56,57})
+			if (i+1)*10 > size{break}
+		}
+		}else{
+		veces = len(contenido)/64
+		//res = len(contenido)%64
+	}
+	inicio,fin:= 0,63
+	for i := 0; i < len(inodo.I_block); i++ {
+		if veces>0{
+			nuevoBloqueArchivo(contenido[inicio:fin],disco,super,&inodo.I_block[i],parinit)
+			inicio = fin
+			fin += 64
+			veces--
+		}else{
+			nuevoBloqueArchivo(contenido[inicio:],disco,super,&inodo.I_block[i],parinit)
+			break
+		}
+	}
+	puntero,e := disco.Seek(InodoLibre,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(inodo),puntero)
+}
+func nuevoBloqueArchivo(content []byte,disco *os.File,super *estructuras.SuperBloque,directo *byte,part int64){
+
+	InicioBitmapBloque := helpers.ByteArrayToInt64(super.S_bm_block_start[:])
+	BloqueLibreBM  := helpers.ByteArrayToInt64(super.S_first_blo[:])
+	BloqueLibre := helpers.ByteArrayToInt64(super.S_block_start[:])+helpers.ByteArrayToInt64(super.S_block_size[:])*(BloqueLibreBM)
+	
+	//Crear el archivo
+	archivoNuevo := estructuras.BloqueArchivos{}
+	copy(archivoNuevo.B_content[:],content[:])
+	//Actualizar bitmap, primer libre y cantidad libre
+	actualizarBitmapBloque(disco,helpers.ByteArrayToInt64(super.S_blocks_count[:]),InicioBitmapBloque,super)
+	nuevoCantBloqueLibre := helpers.ByteArrayToInt64(super.S_free_blocks_count[:]) - 1
+	copy(super.S_free_blocks_count[:],helpers.IntToByteArray(nuevoCantBloqueLibre))
+	
+	*directo = helpers.IntToByteArray(BloqueLibreBM)[0]
+
+	puntero,e := disco.Seek(part,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(super),puntero)
+	puntero,e = disco.Seek(BloqueLibre,io.SeekStart); if e!=nil{msg_error(e)}
+	disco.WriteAt(Struct_to_bytes(archivoNuevo),puntero)
 }
