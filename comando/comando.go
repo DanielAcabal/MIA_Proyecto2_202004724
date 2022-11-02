@@ -25,8 +25,8 @@ var RepDisk = "digraph{\"RepDisk\"}"
 var RepArbol= "digraph{\"RepArbol\"}"
 /*======================MKDISK=======================*/
 func Mkdisk(commandArray []string) string{
-	//mkdisk -Size=3000 -unit=K -path=/user/Disco4.dk
-	// mkdisk -size=5 -unit=M -path="/mis discos/Disco3.dk"
+	//mkdisk -Size=3000 -unit=K -path=~/user/Disco4.dk
+	// mkdisk -size=5 -unit=M -path="~/mis discos/Disco3.dk"
 	consola :="==============MKDISK==============\n"
 	tamano := int64(0)
 	dimensional := "MB"
@@ -71,7 +71,7 @@ func Mkdisk(commandArray []string) string{
 			reg := regexp.MustCompile("/[a-zA-Z0-9 ]+.dk")
 			junto := reg.ReplaceAllString(ruta,"")
 			//seguir = false
-			junto = ""+junto+""
+			junto = "~"+junto+""
 			err := os.MkdirAll(junto,os.ModePerm)
 			if err != nil {
 				msg_error(err)
@@ -100,7 +100,7 @@ func Mkdisk(commandArray []string) string{
 	for j := 0; j < 1024; j++ {
 		bloque[j] = 0
 	}
-	ruta = ""+ruta+""
+	ruta = "~"+ruta+""
 	// Creacion, escritura y cierre de archivo
     disco, err := os.Create(ruta)
 	if err != nil {
@@ -143,7 +143,7 @@ func Mkdisk(commandArray []string) string{
 	return consola
 }
 func Rmdisk(commandArray []string) string{
-	// rmdisk -path=/user2/Disco1.dk
+	// rmdisk -path=~/user2/Disco1.dk
 	consola := "==========RMDISK==========\n"
 	ruta := ""
 	seguir := true
@@ -161,7 +161,7 @@ func Rmdisk(commandArray []string) string{
 	}
 	if !seguir{return consola}
 	if cant != 1 {return consola}
-	ruta = ""+ruta
+	ruta = "~"+ruta
 	if _, err := os.Stat(ruta); err == nil {
 		e := os.Remove(ruta)
 		if e != nil {
@@ -269,7 +269,7 @@ func Fdisk(commandArray []string) string {
         //Ejecutar fdisk
         //Leer disco
         ruta = strings.Replace(ruta,"\"","",2);
-		ruta = ""+ruta
+		ruta = "~"+ruta
         nombreParticion = strings.Replace(nombreParticion,"\"","",2);
         copy(nuevo.Part_name[:],nombreParticion);
         if (eliminar){
@@ -290,9 +290,9 @@ func Fdisk(commandArray []string) string {
 	return consola
 }
 func crearParticion(particion estructuras.Particion,path string, size int, unit rune,add int,consola *string){
-    //fdisk -size=1000  -unit=B -path=/user/Disco4.dk -name=Particion4
-    //fdisk -add=8 -s=10 -unit=K -path=/user/Disco3.dk -name=Particion3
-    //fdisk -delete=full -name=Particion4 -path=/user/Disco3.dk
+    //fdisk -size=1000  -unit=B -path=~/user/Disco4.dk -name=Particion4
+    //fdisk -add=8 -s=10 -unit=K -path=~/user/Disco3.dk -name=Particion3
+    //fdisk -delete=full -name=Particion4 -path=~/user/Disco3.dk
 	disco, err := os.OpenFile(path,os.O_RDWR,0660);
 	if err != nil{
 		msg_error(err)
@@ -672,7 +672,7 @@ func eliminarParticion(path string, name string,consola *string){
 }
 func Mount(parametros []string) string{
 	consola := "==========MOUNT==========\n"
-	ruta := ""
+	ruta := "~"
 	name := ""
 	cant := 0
 	for i := 1; i < len(parametros); i++ {
